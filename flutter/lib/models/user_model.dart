@@ -6,13 +6,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
 import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:get/get.dart';
+import 'package:http/http.dart' as account_http;
 
 import '../common.dart';
 import '../utils/http_service.dart' as http;
 import 'model.dart';
 import 'platform_model.dart';
+import 'tomdesk_account_gate.dart';
+import 'tomdesk_role.dart';
+import 'text_overlay_model.dart';
 
 bool refreshingUser = false;
+
+typedef _PairedDevice = ({String? targetId, bool? online});
+
+const _tomDeskDeviceBound =
+    'This computer is bound to another account. Sign in with that account or contact your administrator.';
+const _tomDeskPairExpired =
+    'This account pair has expired. Ask your administrator to renew it.';
+const _tomDeskLoginRateLimited =
+    'Too many sign-in attempts. Try again later.';
+
+String tomDeskLoginErrorText(String cause) {
+  final chinese = switch (cause) {
+    _tomDeskDeviceBound => (
+        '本机已绑定其他账号。请用原账号登录，或联系管理员。',
+        '本機已綁定其他帳號。請使用原帳號登入，或聯絡管理員。',
+      ),
+    _tomDeskPairExpired => ('此账号配对已过期，请联系管理员续期。', '此帳號配對已過期，請聯絡管理員續期。'),
+    _tomDeskLoginRateLimited => ('登录尝试过多，请稍后再试。', '登入嘗試過多，請稍後再試。'),
+    _ => null,
+  };
+  if (chinese == null) return translate(cause);
+
+  final configured = bind.mainGetLocalOption(key: 'lang').toLowerCase();
+  final language = (configured.isEmpty || configured == 'default'
+          ? localeName.toString().toLowerCase()
+          : configured)
+      .replaceAll('_', '-');
+  if (!language.startsWith('zh')) return cause;
+  return language.contains('hant') ||
+          language.contains('-tw') ||
+          language.contains('-hk') ||
+          language.contains('-mo')
+      ? chinese.$2
+      : chinese.$1;
+}
 
 class UserModel {
   final RxString userName = ''.obs;
@@ -23,7 +62,8 @@ class UserModel {
   // True when networkError carries a server-reported error rather than a
   // connectivity failure; netWorkErrorWidget hides the network tip then.
   final RxBool networkErrorFromServer = false.obs;
-  bool get isLogin => userName.isNotEmpty;
+  bool get isLogin => TomDeskAccountGate.isRequired
+      ? TomDeskAccountGate.instance.authorized : userName.isNotEmpty;
   String get displayNameOrUserName =>
       displayName.value.trim().isEmpty ? userName.value : displayName.value;
   String get accountLabelWithHandle {
@@ -50,7 +90,26 @@ class UserModel {
     });
   }
 
+  void updateTomDeskAccount() {
+    final account = TomDeskAccountGate.instance;
+    if (account.authorized && account.user != null) {
+      _parseAndUpdateUser(UserPayload.fromJson(account.user!));
+      networkError.value = '';
+    } else {
+      userName.value = '';
+      displayName.value = '';
+      avatar.value = '';
+      isAdmin.value = false;
+      networkError.value = account.error.isEmpty
+          ? tomDeskSignInRequired : account.error;
+    }
+  }
+
   void refreshCurrentUser() async {
+    if (TomDeskAccountGate.isRequired) {
+      await TomDeskAccountGate.instance.refresh();
+      return;
+    }
     if (bind.isDisableAccount()) return;
     networkError.value = '';
     networkErrorFromServer.value = false;
@@ -60,7 +119,7 @@ class UserModel {
       return;
     }
     _updateLocalUserInfo();
-    final url = await bind.mainGetApiServer();
+    final url = await accountApiServer();
     final body = {
       'id': await bind.mainGetMyId(),
       'uuid': await bind.mainGetUuid()
@@ -136,6 +195,12 @@ class UserModel {
   }
 
   Future<void> reset({bool resetOther = false}) async {
+    if (TomDeskAccountGate.isRequired) {
+      TomDeskAccountGate.instance.invalidate();
+      final overlay = TextOverlayModel.instance;
+      final source = overlay.source;
+      if (source != null) await overlay.disable(source);
+    }
     await bind.mainSetLocalOption(key: 'access_token', value: '');
     await bind.mainSetLocalOption(key: 'user_info', value: '');
     if (resetOther) {
@@ -145,6 +210,10 @@ class UserModel {
     userName.value = '';
     displayName.value = '';
     avatar.value = '';
+    if (TomDeskAccountGate.isRequired &&
+        bind.mainGetLocalOption(key: 'access_token').isNotEmpty) {
+      throw StateError(tomDeskCredentialClearFailed);
+    }
   }
 
   _parseAndUpdateUser(UserPayload user) {
@@ -161,16 +230,198 @@ class UserModel {
 
   // update ab and group status
   static Future<void> updateOtherModels() async {
+    if (TomDeskAccountGate.isRequired) return;
     await Future.wait([
       gFFI.abModel.pullAb(force: ForcePullAb.listAndCurrent, quiet: false),
       gFFI.groupModel.pull()
     ]);
   }
 
+  Future<account_http.Response> _postTomDeskAccount(
+      String endpoint, Map<String, dynamic> body, {String? token}) async {
+    final client = account_http.Client();
+    try {
+      final server = await accountApiServer();
+      final request = account_http.Request(
+          'POST', Uri.parse('$server/api/$endpoint'))
+        ..followRedirects = false
+        ..headers['Content-Type'] = 'application/json'
+        ..body = jsonEncode(body);
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
+      // Account secrets must not use the generic Rust HTTP TLS fallback.
+      return await client.send(request)
+          .then(account_http.Response.fromStream)
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      throw RequestException(0, tomDeskAccountUnavailable);
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<_PairedDevice>? _pairedDeviceRequest;
+  String? _pairedDeviceRequestToken;
+
+  Future<String?> pairedDevice() async {
+    if (!isTomDeskController) {
+      throw RequestException(403, tomDeskRoleMismatch);
+    }
+    if (!await TomDeskAccountGate.instance.refresh()) {
+      throw RequestException(401, tomDeskSignInRequired);
+    }
+    return (await _lookupPairedDevice()).targetId;
+  }
+
+  Future<bool?> pairedDeviceOnline() async {
+    if (!isTomDeskController || !isLogin) return null;
+    return (await _lookupPairedDevice()).online;
+  }
+
+  bool _isCurrentPairedDeviceToken(String token) =>
+      isLogin && token == bind.mainGetLocalOption(key: 'access_token');
+
+  Future<_PairedDevice> _lookupPairedDevice() async {
+    final token = bind.mainGetLocalOption(key: 'access_token');
+    if (!isLogin || token.isEmpty) {
+      throw RequestException(401, tomDeskSignInRequired);
+    }
+    // Opening a connection can use a lookup already in flight for this login.
+    // A later connection attempt still performs a fresh lookup.
+    final inFlight = _pairedDeviceRequest;
+    if (inFlight != null && _pairedDeviceRequestToken == token) {
+      return inFlight;
+    }
+    final request = _fetchPairedDevice(token);
+    _pairedDeviceRequest = request;
+    _pairedDeviceRequestToken = token;
+    try {
+      return await request;
+    } finally {
+      if (identical(_pairedDeviceRequest, request)) {
+        _pairedDeviceRequest = null;
+        _pairedDeviceRequestToken = null;
+      }
+    }
+  }
+
+  Future<_PairedDevice> _fetchPairedDevice(String token) async {
+    final id = await bind.mainGetMyId();
+    final uuid = await bind.mainGetUuid();
+    if (!_isCurrentPairedDeviceToken(token)) {
+      throw RequestException(401, tomDeskSignInRequired);
+    }
+    final response = await _postTomDeskAccount('tomdesk/paired-device', {
+      'id': id,
+      'uuid': uuid,
+    }, token: token);
+    if (!_isCurrentPairedDeviceToken(token)) {
+      throw RequestException(401, tomDeskSignInRequired);
+    }
+    try {
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      if (body is! Map) throw const FormatException();
+      if (response.statusCode != 200) {
+        final message = body['code'] == 'pair_required' || body['code'] == 'pair_disabled'
+            ? tomDeskPairUnavailable
+            : body['code'] == 'role_mismatch'
+                ? tomDeskRoleMismatch : tomDeskAccountUnavailable;
+        throw RequestException(response.statusCode, message);
+      }
+      if (!body.containsKey('target_id')) throw const FormatException();
+      final target = body['target_id'];
+      if (target != null && (target is! String || target.trim().isEmpty)) {
+        throw const FormatException();
+      }
+      final online = body['online'];
+      return (targetId: target as String?, online: online is bool ? online : null);
+    } on RequestException {
+      rethrow;
+    } catch (_) {
+      throw RequestException(0, tomDeskAccountUnavailable);
+    }
+  }
+
+  Future<LoginResponse> _loginTomDesk(LoginRequest request) async {
+    final clientRole = tomDeskClientRole;
+    final previousToken = clientRole == null
+        ? ''
+        : bind.mainGetLocalOption(key: 'access_token');
+    // The server can use a still-valid session on this exact device as proof
+    // that the current account is authorized to release its binding.
+    final response = await _postTomDeskAccount(
+      'login',
+      request.toJson(),
+      token: previousToken.isEmpty ? null : previousToken,
+    );
+    if (response.statusCode != 200) {
+      var message = tomDeskAccountUnavailable;
+      try {
+        final error = jsonDecode(utf8.decode(response.bodyBytes));
+        final code = error is Map ? error['code'] : null;
+        message = switch (code) {
+          'role_mismatch' => tomDeskRoleMismatch,
+          'pair_required' || 'pair_disabled' => tomDeskPairUnavailable,
+          'invalid_credentials' => 'Wrong credentials',
+          'device_bound' => _tomDeskDeviceBound,
+          'pair_expired' => _tomDeskPairExpired,
+          'rate_limited' => _tomDeskLoginRateLimited,
+          _ => tomDeskAccountUnavailable,
+        };
+      } catch (_) {}
+      throw RequestException(response.statusCode, message);
+    }
+    try {
+      final body = jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
+      if (body['error'] != null) throw const FormatException();
+      final result = LoginResponse.fromJson(body);
+      if (result.type != HttpType.kAuthResTypeToken ||
+          result.access_token == null || result.access_token!.isEmpty ||
+          result.user == null || result.user!.name.isEmpty) {
+        throw const FormatException();
+      }
+      if (clientRole != null && result.user!.role != clientRole) {
+        throw RequestException(403, tomDeskRoleMismatch);
+      }
+      return result;
+    } on RequestException {
+      rethrow;
+    } catch (_) {
+      // Parsing exceptions can contain response fragments, including tokens.
+      throw RequestException(0, tomDeskAccountUnavailable);
+    }
+  }
+
+  Future<void> _logOutTomDesk() async {
+    final token = bind.mainGetLocalOption(key: 'access_token');
+    var storageFailed = false;
+    try {
+      await reset(resetOther: true);
+    } catch (_) {
+      storageFailed = true;
+    }
+    try {
+      await _postTomDeskAccount('logout', {
+        'id': await bind.mainGetMyId(),
+        'uuid': await bind.mainGetUuid(),
+      }, token: token);
+    } catch (_) {
+      // Local invalidation takes effect even when the server is unreachable.
+    }
+    if (storageFailed) {
+      networkError.value = tomDeskCredentialClearFailed;
+      BotToast.showText(text: translate(tomDeskCredentialClearFailed));
+    }
+  }
+
   Future<void> logOut({String? apiServer}) async {
+    if (TomDeskAccountGate.isRequired) {
+      await _logOutTomDesk();
+      return;
+    }
     final tag = gFFI.dialogManager.showLoading(translate('Waiting'));
     try {
-      final url = apiServer ?? await bind.mainGetApiServer();
+      final url = apiServer ?? await accountApiServer();
       final authHeaders = getHttpHeaders();
       authHeaders['Content-Type'] = "application/json";
       await http
@@ -191,7 +442,8 @@ class UserModel {
 
   /// throw [RequestException]
   Future<LoginResponse> login(LoginRequest loginRequest) async {
-    final url = await bind.mainGetApiServer();
+    if (TomDeskAccountGate.isRequired) return _loginTomDesk(loginRequest);
+    final url = await accountApiServer();
     final resp = await http.post(Uri.parse('$url/api/login'),
         body: jsonEncode(loginRequest.toJson()));
 
@@ -227,7 +479,8 @@ class UserModel {
 
     final isLogInDone = loginResponse.type == HttpType.kAuthResTypeToken &&
         loginResponse.access_token != null;
-    if (isLogInDone && loginResponse.user != null) {
+    if (!TomDeskAccountGate.isRequired &&
+        isLogInDone && loginResponse.user != null) {
       _parseAndUpdateUser(loginResponse.user!);
     }
 
@@ -238,7 +491,8 @@ class UserModel {
   /// data. Returns an empty list when no API server is configured or a
   /// successful response contains no third-party login options.
   static Future<List<dynamic>> queryOidcLoginOptions() async {
-    final url = await bind.mainGetApiServer();
+    if (TomDeskAccountGate.isRequired) return [];
+    final url = await accountApiServer();
     if (url.trim().isEmpty) return [];
     final resp = await http.get(Uri.parse('$url/api/login-options'));
     const successStatusCodeStart = 200;

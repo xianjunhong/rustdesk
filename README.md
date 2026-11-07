@@ -1,3 +1,19 @@
+# DogShare
+
+此分支保存基于 RustDesk 的 DogShare 定制源码，包括控制端、被控端、字幕界面和账号服务。
+
+- Windows 构建与打包：[DOGSHARE_BUILD.md](docs/DOGSHARE_BUILD.md)
+- 定制功能：[TOMDESK.md](docs/TOMDESK.md)、[角色说明](docs/TOMDESK_ROLES.md)
+- 账号服务：[tomdesk-account-server](tomdesk-account-server/README.md)
+- 上游基线：`55786aaa5709ac0a450aabcf06f9d1fee3119908`。
+
+保留上游 Git 历史、`libs/hbb_common` 子模块、许可证和归属说明。克隆时需要初始化子模块。
+当前客户端默认连接项目现用的账号、ID 和中继服务；源码中的服务地址与服务器公钥不是部署密码。
+账号数据库、管理员凭据、私钥、本机工具链、编译缓存和安装包不纳入源码仓库。
+原有上游 CI 配置保留；本分支尚未完成独立环境的完整 Windows 构建验证。
+
+---
+
 <p align="center">
   <img src="res/logo-header.svg" alt="RustDesk - Your remote desktop"><br>
   <a href="#raw-steps-to-build">Build</a> •

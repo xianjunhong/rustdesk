@@ -20,6 +20,9 @@ import '../common.dart';
 import '../common/widgets/overlay.dart';
 import '../main.dart';
 import 'model.dart';
+import 'text_overlay_model.dart';
+import 'tomdesk_role.dart';
+import 'tomdesk_subtitle_frame.dart';
 
 class MessageKey {
   final String peerId;
@@ -83,8 +86,10 @@ class ChatModel with ChangeNotifier {
 
   @override
   void dispose() {
+    closeTextOverlay();
     inputNode.removeListener(_updateChatInputControl);
     _restoreChatInputControl();
+    _subtitleDraft?.dispose();
     textController.dispose();
     super.dispose();
   }
@@ -98,6 +103,21 @@ class ChatModel with ChangeNotifier {
 
   MessageKey _currentKey = MessageKey('', -2); // -2 is invalid value
   late bool _isShowCMSidePage = false;
+  final _pairedSubtitleConnections = <int>{};
+  TomDeskSubtitleDraft? _subtitleDraft;
+
+  TomDeskSubtitleDraft get subtitleDraft => _subtitleDraft ??=
+      TomDeskSubtitleDraft(sessionId: sessionId, input: textController);
+
+  bool get supportsOutgoingSubtitles =>
+      currentKey.isOut &&
+      parent.target?.connType == ConnType.defaultConn &&
+      isTomDeskController;
+
+  bool get subtitleInputComposing =>
+      _subtitleDraft?.enabled == true &&
+      supportsOutgoingSubtitles &&
+      subtitleDraft.isComposing;
 
   Map<MessageKey, MessageBody> get messages => _messages;
 
@@ -130,6 +150,10 @@ class ChatModel with ChangeNotifier {
         bool isShiftPressed = event.isKeyPressed(LogicalKeyboardKey.shiftLeft);
         bool isEnterPressed = event.isKeyPressed(LogicalKeyboardKey.enter);
 
+        if (isEnterPressed && subtitleInputComposing) {
+          return KeyEventResult.ignored;
+        }
+
         // don't send empty messages
         if (isEnterPressed && isEnterPressed && textController.text.isEmpty) {
           return KeyEventResult.handled;
@@ -149,6 +173,13 @@ class ChatModel with ChangeNotifier {
         return KeyEventResult.ignored;
       },
     );
+  }
+
+  void clearDraft() {
+    if (textController.text.isEmpty) return;
+    textController.clear();
+    inputNode.requestFocus();
+    notifyListeners();
   }
 
   ChatUser? get currentUser => _messages[_currentKey]?.chatUser;
@@ -279,6 +310,7 @@ class ChatModel with ChangeNotifier {
   }
 
   showChatPage(MessageKey key) async {
+    if (_pairedSubtitleConnections.contains(key.connId)) return;
     if (isDesktop) {
       if (isConnManager) {
         if (!_isShowCMSidePage) {
@@ -299,6 +331,7 @@ class ChatModel with ChangeNotifier {
   }
 
   toggleCMChatPage(MessageKey key) async {
+    if (_pairedSubtitleConnections.contains(key.connId)) return;
     if (gFFI.chatModel.currentKey != key) {
       gFFI.chatModel.changeCurrentKey(key);
     }
@@ -329,10 +362,17 @@ class ChatModel with ChangeNotifier {
       }
       requestChatInputFocus();
       await windowManager.show();
-      await windowManager.setSizeAlignment(
-          kConnectionManagerWindowSizeOpenChat, Alignment.topRight);
-      _isShowCMSidePage = !_isShowCMSidePage;
-      notifyListeners();
+      if (!_pairedSubtitleConnections.contains(_currentKey.connId)) {
+        await windowManager.setSizeAlignment(
+            kConnectionManagerWindowSizeOpenChat, Alignment.topRight);
+      }
+      // Caption mode may have started while the chat window was opening.
+      if (_pairedSubtitleConnections.contains(_currentKey.connId)) {
+        await _shrinkCaptionChatWindow();
+      } else {
+        _isShowCMSidePage = !_isShowCMSidePage;
+        notifyListeners();
+      }
     }
     _togglingCMSidePage = false;
   }
@@ -363,6 +403,48 @@ class ChatModel with ChangeNotifier {
     mobileClearClientUnread(key.connId);
   }
 
+  Future<void> _shrinkCaptionChatWindow() async {
+    try {
+      await windowManager.setSizeAlignment(
+          kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
+    } on PlatformException {
+      // The side panel is already closed, even if resizing fails.
+    } on MissingPluginException {
+      // The side panel is already closed, even if resizing is unavailable.
+    }
+  }
+
+  void _setPairedSubtitleMode(int id, bool enabled) {
+    if (!enabled) {
+      _pairedSubtitleConnections.remove(id);
+      return;
+    }
+    _pairedSubtitleConnections.add(id);
+    if (_isShowCMSidePage && _currentKey.connId == id) {
+      _isShowCMSidePage = false;
+      notifyListeners();
+      // Don't show or focus the connection manager just to close its chat.
+      unawaited(_shrinkCaptionChatWindow());
+    }
+  }
+
+  void receiveRemoteSubtitle(Map<String, dynamic> event) {
+    if (!isTomDeskReceiver || desktopType != DesktopType.cm) return;
+    final id = int.tryParse(event['id']?.toString() ?? '');
+    final payload = event['frame'];
+    if (id == null || payload is! String) return;
+    final client = parent.target?.serverModel.clients
+        .firstWhereOrNull((c) => c.id == id && c.authorized && !c.disconnected);
+    if (client == null) return;
+    final frame = TomDeskSubtitleFrame.tryDecode(payload);
+    if (frame == null) return;
+    _setPairedSubtitleMode(id, frame.enabled);
+    unawaited(TextOverlayModel.instance.receiveRemoteSubtitle(
+      source: textOverlaySource(MessageKey(client.peerId, id)),
+      frame: frame,
+    ));
+  }
+
   receive(int id, String text) async {
     final session = parent.target;
     if (session == null) {
@@ -370,7 +452,15 @@ class ChatModel with ChangeNotifier {
       return;
     }
     if (text.isEmpty) return;
-    if (desktopType == DesktopType.cm) {
+    final subtitleOnly = _pairedSubtitleConnections.contains(id) ||
+        (isWindows &&
+            !isTomDeskReceiver &&
+            desktopType == DesktopType.cm &&
+            session.serverModel.clients.any((client) =>
+                client.id == id &&
+                TextOverlayModel.instance.enabledFor(
+                    textOverlaySource(MessageKey(client.peerId, id)))));
+    if (desktopType == DesktopType.cm && !subtitleOnly) {
       await showCmWindow();
     }
     String? peerId;
@@ -393,7 +483,7 @@ class ChatModel with ChangeNotifier {
       showChatIconOverlay();
     }
     // show chat page
-    await showChatPage(messagekey);
+    if (!subtitleOnly) await showChatPage(messagekey);
     late final ChatUser chatUser;
     if (id == clientModeID) {
       chatUser = ChatUser(
@@ -431,13 +521,14 @@ class ChatModel with ChangeNotifier {
         return;
       }
       if (isDesktop) {
-        windowOnTop(null);
+        if (!subtitleOnly) windowOnTop(null);
         // disable auto jumpTo other tab when hasFocus, and mark unread message
         final currentSelectedTab =
             session.serverModel.tabController.state.value.selectedTabInfo;
-        if (currentSelectedTab.key != id.toString() && inputNode.hasFocus) {
+        if (currentSelectedTab.key != id.toString() &&
+            (inputNode.hasFocus || subtitleOnly)) {
           client.unreadChatMessageCount.value += 1;
-        } else {
+        } else if (!subtitleOnly) {
           parent.target?.serverModel.jumpTo(id);
         }
       } else {
@@ -456,6 +547,10 @@ class ChatModel with ChangeNotifier {
       _currentKey = messagekey;
       mobileClearClientUnread(messagekey.connId);
     }
+    if (isWindows && !isTomDeskReceiver) {
+      unawaited(TextOverlayModel.instance.receive(
+          source: textOverlaySource(messagekey), text: text, label: peerId));
+    }
     latestReceivedKey = messagekey;
     notifyListeners();
   }
@@ -463,6 +558,14 @@ class ChatModel with ChangeNotifier {
   send(ChatMessage message) {
     String trimmedText = message.text.trim();
     if (trimmedText.isEmpty) {
+      return;
+    }
+    if (_subtitleDraft?.enabled == true && supportsOutgoingSubtitles) {
+      if (subtitleDraft.isComposing) return;
+      message.text = subtitleDraft.submit(trimmedText);
+      if (message.text.isNotEmpty) insertMessage(_currentKey, message);
+      notifyListeners();
+      inputNode.requestFocus();
       return;
     }
     message.text = trimmedText;
@@ -523,7 +626,26 @@ class ChatModel with ChangeNotifier {
     }
   }
 
+  String textOverlaySource(MessageKey key) =>
+      '$sessionId/${key.connId}/${key.peerId}';
+
+  void closeTextOverlay([int? connId]) {
+    if (!isWindows) return;
+    if (connId == null) {
+      _pairedSubtitleConnections.clear();
+    } else {
+      _pairedSubtitleConnections.remove(connId);
+    }
+    final overlay = TextOverlayModel.instance;
+    final source = overlay.source;
+    final prefix = connId == null ? '$sessionId/' : '$sessionId/$connId/';
+    if (source != null && source.startsWith(prefix)) {
+      unawaited(overlay.disable(source));
+    }
+  }
+
   close() {
+    closeTextOverlay();
     hideChatIconOverlay();
     hideChatWindowOverlay();
     notifyListeners();

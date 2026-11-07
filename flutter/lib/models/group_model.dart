@@ -5,6 +5,7 @@ import 'package:flutter_hbb/common/widgets/peers_view.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
+import 'tomdesk_account_gate.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
 import '../utils/http_service.dart' as http;
@@ -37,6 +38,7 @@ class GroupModel {
   }
 
   Future<void> pull({force = true, quiet = false}) async {
+    if (TomDeskAccountGate.isRequired) return;
     if (bind.isDisableGroupPanel()) return;
     if (!gFFI.userModel.isLogin || groupLoading.value) return;
     if (gFFI.userModel.networkError.isNotEmpty) return;

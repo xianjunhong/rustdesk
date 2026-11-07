@@ -1,0 +1,8 @@
+{
+  "id": 210168939,
+  "name": "windows-x64-release.zip",
+  "size": 63301215,
+  "browser_download_url": "https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip",
+  "digest": "sha256:ec8cabf36ee4ff24c8d98de25b00e70781eb03876265aee84d0fe554a110036e",
+  "digest_source": "SHA256 of the locally verified source build archive; upstream metadata had no digest."
+}

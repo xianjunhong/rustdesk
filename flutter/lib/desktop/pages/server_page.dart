@@ -21,6 +21,8 @@ import '../../common/widgets/chat_page.dart';
 import '../../models/file_model.dart';
 import '../../models/platform_model.dart';
 import '../../models/server_model.dart';
+import '../../models/tomdesk_receiver_window.dart';
+import '../../models/tomdesk_role.dart';
 
 /// Set only by this window's own close control, and only once the user has confirmed. Any other
 /// way the window can go - a session logout closing every window, the window manager, a native
@@ -335,6 +337,10 @@ class ConnectionManagerState extends State<ConnectionManager>
   }
 
   Future<bool> handleWindowCloseButton() async {
+    if (isTomDeskReceiverConnectionManager) {
+      await minimizeTomDeskReceiverConnectionDetails();
+      return false; // The title bar must not also close the window.
+    }
     var tabController = gFFI.serverModel.tabController;
     final connLength = tabController.length;
     if (connLength <= 1) {
@@ -368,7 +374,8 @@ Widget buildConnectionCard(Client client) {
       key: ValueKey(client.id),
       children: [
         _CmHeader(client: client),
-        client.type_() == ClientType.file ||
+        isTomDeskReceiver ||
+                client.type_() == ClientType.file ||
                 client.type_() == ClientType.portForward ||
                 client.type_() == ClientType.terminal ||
                 client.disconnected
@@ -494,7 +501,7 @@ class _CmHeaderState extends State<_CmHeader>
                   ),
                   maxLines: 1,
                 )),
-                FittedBox(
+                if (!isTomDeskReceiver) FittedBox(
                   child: Text(
                     "(${client.peerId})",
                     style: TextStyle(color: Colors.white, fontSize: 14),
@@ -537,7 +544,8 @@ class _CmHeaderState extends State<_CmHeader>
                           ? client.disconnected
                               ? translate("Disconnected")
                               : translate("Connected")
-                          : "${translate("Request access to your device")}...",
+                          : isTomDeskReceiver ? translate('Waiting')
+                              : "${translate("Request access to your device")}...",
                       style: TextStyle(color: Colors.white),
                     ).marginOnly(right: 8.0),
                     if (client.authorized)
@@ -872,6 +880,32 @@ class _CmControlPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isTomDeskReceiver) {
+      if (client.disconnected) return buildDisconnected(context);
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (client.authorized && client.inVoiceCall)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  tomDeskReceiverVoiceActiveText,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
+          buildButton(context,
+              color: Colors.redAccent,
+              onClick: handleDisconnect,
+              text: 'Disconnect',
+              textColor: Colors.white),
+        ],
+      ).marginOnly(bottom: buttonBottomMargin);
+    }
     return client.authorized
         ? client.disconnected
             ? buildDisconnected(context)
@@ -879,15 +913,7 @@ class _CmControlPanel extends StatelessWidget {
         : buildUnAuthorized(context);
   }
 
-  buildAuthorized(BuildContext context) {
-    final bool canElevate = bind.cmCanElevate();
-    final model = Provider.of<ServerModel>(context);
-    final showElevation = canElevate &&
-        model.showElevation &&
-        client.type_() == ClientType.remote;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
+  List<Widget> _buildVoiceControls(BuildContext context) => [
         Offstage(
           offstage: !client.inVoiceCall,
           child: Row(
@@ -1007,6 +1033,18 @@ class _CmControlPanel extends StatelessWidget {
             ],
           ),
         ),
+      ];
+
+  buildAuthorized(BuildContext context) {
+    final bool canElevate = bind.cmCanElevate();
+    final model = Provider.of<ServerModel>(context);
+    final showElevation = canElevate &&
+        model.showElevation &&
+        client.type_() == ClientType.remote;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        ..._buildVoiceControls(context),
         Offstage(
           offstage: !client.fromSwitch,
           child: buildButton(context,

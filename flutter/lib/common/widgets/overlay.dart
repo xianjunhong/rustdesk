@@ -10,6 +10,7 @@ import '../../consts.dart';
 import '../../desktop/widgets/tabbar_widget.dart';
 import '../../models/chat_model.dart';
 import '../../models/model.dart';
+import '../../models/tomdesk_role.dart';
 import 'chat_page.dart';
 
 class DraggableChatWindow extends StatelessWidget {
@@ -30,6 +31,22 @@ class DraggableChatWindow extends StatelessWidget {
   Widget build(BuildContext context) {
     if (draggablePositions.chatWindow.isInvalid()) {
       draggablePositions.chatWindow.update(position);
+    }
+    if (isDesktop &&
+        isTomDeskController &&
+        chatModel.parent.target?.connType == ConnType.defaultConn) {
+      return _ResizablePairedChatWindow(
+        chatModel: chatModel,
+        position: draggablePositions.chatWindow,
+        builder: (context, onPanUpdate) => Scaffold(
+          resizeToAvoidBottomInset: false,
+          appBar: CustomAppBar(
+            onPanUpdate: onPanUpdate,
+            appBar: _buildDesktopAppBar(context),
+          ),
+          body: ChatPage(chatModel: chatModel),
+        ),
+      );
     }
     return isIOS
         ? IOSDraggable(
@@ -150,6 +167,119 @@ class DraggableChatWindow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Larger desktop chat for the paired controller, independent of mobile overlays.
+class _ResizablePairedChatWindow extends StatefulWidget {
+  const _ResizablePairedChatWindow({
+    required this.chatModel,
+    required this.position,
+    required this.builder,
+  });
+
+  final ChatModel chatModel;
+  final DraggableKeyPosition position;
+  final Widget Function(BuildContext, GestureDragUpdateCallback) builder;
+
+  @override
+  State<_ResizablePairedChatWindow> createState() =>
+      _ResizablePairedChatState();
+}
+
+class _ResizablePairedChatState extends State<_ResizablePairedChatWindow> {
+  static const _minimumSize = Size(280, 280);
+  Size _size = const Size(440, 460);
+
+  Offset _clampPosition(Offset position, Size viewport, Size panel) => Offset(
+        position.dx.clamp(0.0, viewport.width - panel.width).toDouble(),
+        position.dy.clamp(0.0, viewport.height - panel.height).toDouble(),
+      );
+
+  Rect _panelRect(Size viewport) {
+    final size = Size(
+      _size.width.clamp(0.0, viewport.width).toDouble(),
+      _size.height.clamp(0.0, viewport.height).toDouble(),
+    );
+    return _clampPosition(widget.position.pos, viewport, size) & size;
+  }
+
+  void _move(Size viewport, Offset delta) {
+    final rect = _panelRect(viewport);
+    final next = _clampPosition(rect.topLeft + delta, viewport, rect.size);
+    setState(() => widget.position.update(next));
+    widget.chatModel.setChatWindowPosition(next);
+  }
+
+  void _resize(Size viewport, Offset delta) {
+    // Read the latest size even when multiple mouse events arrive before paint.
+    final rect = _panelRect(viewport);
+    final maxWidth = viewport.width - rect.left;
+    final maxHeight = viewport.height - rect.top;
+    final minWidth = _minimumSize.width.clamp(0.0, maxWidth);
+    final minHeight = _minimumSize.height.clamp(0.0, maxHeight);
+    setState(() {
+      // Resize from the displayed position if the viewport clamped the panel.
+      widget.position.update(rect.topLeft);
+      _size = Size(
+        (rect.width + delta.dx).clamp(minWidth, maxWidth).toDouble(),
+        (rect.height + delta.dy).clamp(minHeight, maxHeight).toDouble(),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+          if (viewport.width < 120 || viewport.height < 150) {
+            return const SizedBox.shrink();
+          }
+          final rect = _panelRect(viewport);
+          return Stack(
+            children: [
+              Positioned.fromRect(
+                rect: rect,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    border: Border.all(color: MyTheme.border),
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Padding(
+                        // Keep the grip out of the composer's hit targets.
+                        padding: const EdgeInsets.only(bottom: 17),
+                        child: widget.builder(
+                          context,
+                          (event) => _move(viewport, event.delta),
+                        ),
+                      ),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeDownRight,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onPanUpdate: (event) =>
+                                _resize(viewport, event.delta),
+                            child: const SizedBox(
+                              width: 22,
+                              height: 17,
+                              child: Icon(Icons.open_in_full, size: 13),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
 }
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {

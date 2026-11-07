@@ -65,14 +65,13 @@ fn is_timestamp_matches(dir: &Path, ts: &mut u64) -> bool {
     false
 }
 
-fn write_meta(dir: &Path, ts: u64, package_paths: &[String]) {
+fn write_meta(dir: &Path, ts: u64, package_paths: &[String]) -> std::io::Result<()> {
     let meta_file = dir.join(APP_METADATA_CONFIG);
     let mut content = format!("{}{}\n", META_LINE_PREFIX_TIMESTAMP, ts);
     for path in package_paths {
         content.push_str(&format!("{}{}\n", META_LINE_PREFIX_FILE, path));
     }
-    // Ignore is ok here
-    let _ = std::fs::write(meta_file, content);
+    std::fs::write(meta_file, content)
 }
 
 fn previous_package_files(dir: &Path) -> Vec<String> {
@@ -154,13 +153,64 @@ fn remove_dropped_package_files(dir: &Path, current: &[String]) -> Vec<String> {
     remove_dropped_package_files_with(dir, current, |path| std::fs::remove_file(path))
 }
 
+#[cfg(windows)]
+fn extract_windows_package(
+    reader: &BinaryReader,
+    dir: &Path,
+    clear: bool,
+    args: &[String],
+    ui: &mut bool,
+) -> Result<(), String> {
+    let mut ts = 0;
+    let refresh = !is_timestamp_matches(dir, &mut ts) || clear;
+    let files: Vec<_> = reader
+        .files
+        .iter()
+        .filter(|file| refresh || !file.cached_file_matches(dir))
+        .collect();
+    if !refresh && files.is_empty() {
+        let path_set = |paths: &[String]| {
+            paths
+                .iter()
+                .map(|path| normalize_path(path))
+                .collect::<std::collections::HashSet<_>>()
+        };
+        if path_set(&previous_package_files(dir)) == path_set(&reader.package_paths) {
+            return Ok(());
+        }
+    }
+
+    // A timestamp alone cannot prove that a previous extraction completed.
+    // Check the old executable before touching any files from the new package.
+    win::check_cached_exe_unlocked(&dir.join(&reader.exe))?;
+    if refresh {
+        if args.is_empty() {
+            *ui = true;
+            ui::setup();
+        }
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Could not clear the DogShare cache: {error}")),
+        }
+    } else if let Some(path) = remove_dropped_package_files(dir, &reader.package_paths).first() {
+        return Err(format!("Could not remove the old package file: {path}"));
+    }
+    for file in files {
+        file.extract_to(dir)
+            .map_err(|error| format!("Could not extract {}: {error}", file.path))?;
+    }
+    write_meta(dir, ts, &reader.package_paths)
+        .map_err(|error| format!("Could not update the DogShare cache metadata: {error}"))
+}
+
 fn setup(
     reader: BinaryReader,
     dir: Option<PathBuf>,
     clear: bool,
     _args: &Vec<String>,
     _ui: &mut bool,
-) -> Option<PathBuf> {
+) -> Result<Option<PathBuf>, String> {
     let dir = if let Some(dir) = dir {
         dir
     } else {
@@ -169,30 +219,31 @@ fn setup(
             dir.join(app_dir_name(&reader.exe))
         } else {
             eprintln!("not found data local dir");
-            return None;
+            return Ok(None);
         }
     };
 
-    let mut ts = 0;
-    if clear || !is_timestamp_matches(&dir, &mut ts) {
-        #[cfg(windows)]
-        if _args.is_empty() {
-            *_ui = true;
-            ui::setup();
-        }
-        std::fs::remove_dir_all(&dir).ok();
-    }
-    let mut metadata_paths = reader.package_paths.clone();
-    metadata_paths.extend(remove_dropped_package_files(&dir, &reader.package_paths));
-    for file in reader.files.iter() {
-        file.write_to_file(&dir);
-    }
-    write_meta(&dir, ts, &metadata_paths);
     #[cfg(windows)]
-    win::copy_runtime_broker(&dir);
-    #[cfg(linux)]
-    reader.configure_permission(&dir);
-    Some(dir.join(&reader.exe))
+    {
+        extract_windows_package(&reader, &dir, clear, _args, _ui)?;
+        win::copy_runtime_broker(&dir);
+    }
+    #[cfg(not(windows))]
+    {
+        let mut ts = 0;
+        if clear || !is_timestamp_matches(&dir, &mut ts) {
+            std::fs::remove_dir_all(&dir).ok();
+        }
+        let mut metadata_paths = reader.package_paths.clone();
+        metadata_paths.extend(remove_dropped_package_files(&dir, &reader.package_paths));
+        for file in reader.files.iter() {
+            file.write_to_file(&dir);
+        }
+        let _ = write_meta(&dir, ts, &metadata_paths);
+        #[cfg(linux)]
+        reader.configure_permission(&dir);
+    }
+    Ok(Some(dir.join(&reader.exe)))
 }
 
 fn use_null_stdio() -> bool {
@@ -298,13 +349,20 @@ fn main() -> Result<(), String> {
 
     let mut ui = false;
     let reader = BinaryReader::new()?;
-    if let Some(exe) = setup(
+    let exe = setup(
         reader,
         None,
         click_setup || args.contains(&"--silent-install".to_owned()),
         &args,
         &mut ui,
-    ) {
+    );
+    #[cfg(windows)]
+    if args.is_empty() {
+        if let Err(error) = &exe {
+            win::show_launch_error(error);
+        }
+    }
+    if let Some(exe) = exe? {
         if click_setup {
             args = vec!["--install".to_owned()];
         } else if quick_support {
@@ -317,11 +375,60 @@ fn main() -> Result<(), String> {
 
 #[cfg(windows)]
 mod win {
-    use std::{fs, os::windows::process::CommandExt, path::Path, process::Command};
+    use std::{
+        fs, io,
+        os::windows::{fs::OpenOptionsExt, process::CommandExt},
+        path::Path,
+        process::Command,
+    };
+    use winapi::shared::winerror::{
+        ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, ERROR_USER_MAPPED_FILE,
+    };
 
     // Used for privacy mode(magnifier impl).
     pub const RUNTIME_BROKER_EXE: &'static str = "C:\\Windows\\System32\\RuntimeBroker.exe";
     pub const WIN_TOPMOST_INJECTED_PROCESS_EXE: &'static str = "RuntimeBroker_rustdesk.exe";
+
+    pub(super) fn check_cached_exe_unlocked(path: &Path) -> Result<(), String> {
+        match fs::OpenOptions::new()
+            .write(true)
+            .share_mode(0)
+            .open(path)
+        {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error)
+                if error.raw_os_error().is_some_and(|code| {
+                    matches!(
+                        code as u32,
+                        ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION | ERROR_USER_MAPPED_FILE
+                    )
+                }) =>
+            {
+                Err(concat!(
+                    "DogShare 仍在运行。请先退出正在运行的 DogShare 程序，再打开此文件。\n\n",
+                    "DogShare is still running. Exit the running DogShare program, then open this file again."
+                )
+                .to_owned())
+            }
+            Err(error) => Err(format!("Could not access the cached DogShare program: {error}")),
+        }
+    }
+
+    pub(super) fn show_launch_error(error: &str) {
+        use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_OK};
+
+        let message: Vec<_> = error.encode_utf16().chain(std::iter::once(0)).collect();
+        let caption: Vec<_> = "DogShare".encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                message.as_ptr(),
+                caption.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
 
     pub(super) fn schedule_verified_update_cleanup() -> std::io::Result<()> {
         use windows::{
@@ -382,6 +489,101 @@ mod win {
 #[cfg(test)]
 mod meta_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn locked_mixed_cache_is_not_modified_even_if_timestamp_matches() {
+        use crate::bin_reader::BinaryData;
+        use std::fs;
+        use std::io::Write;
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        use winapi::um::winnt::FILE_SHARE_READ;
+
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                for file in ["TomDesk.exe", "app.so", APP_METADATA_CONFIG] {
+                    let _ = fs::remove_file(self.0.join(file));
+                }
+                let _ = fs::remove_dir(&self.0);
+            }
+        }
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "tomdesk-cache-guard-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let cleanup = Cleanup(dir);
+        let dir = &cleanup.0;
+        let exe = dir.join("TomDesk.exe");
+        let data = dir.join("app.so");
+        fs::write(&exe, b"old executable").unwrap();
+        fs::write(&data, b"old application data").unwrap();
+        let mut timestamp = 0;
+        is_timestamp_matches(dir, &mut timestamp);
+        write_meta(dir, timestamp, &[]).unwrap();
+        let before = fs::read(dir.join(APP_METADATA_CONFIG)).unwrap();
+        assert!(is_timestamp_matches(dir, &mut timestamp));
+
+        let blocker = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&exe)
+            .unwrap();
+        let record = |bytes: &[u8]| {
+            let digest = format!("{:x}", md5::compute(bytes));
+            &*Box::leak(digest.into_bytes().into_boxed_slice()) as &'static [u8]
+        };
+        let mut reader = BinaryReader {
+            exe: "TomDesk.exe".to_owned(),
+            files: vec![
+                BinaryData {
+                    md5_code: record(b"old application data"),
+                    raw: b"",
+                    path: "app.so".to_owned(),
+                },
+                BinaryData {
+                    md5_code: record(b"old executable"),
+                    raw: b"",
+                    path: "TomDesk.exe".to_owned(),
+                },
+            ],
+            package_paths: Vec::new(),
+        };
+        let mut ui = false;
+        extract_windows_package(&reader, dir, false, &[], &mut ui).unwrap();
+        reader.files[0].md5_code = record(b"new application data");
+        reader.files[1].md5_code = record(b"new executable");
+        let error = extract_windows_package(&reader, dir, false, &[], &mut ui).unwrap_err();
+        assert!(error.contains("still running"));
+        assert!(!ui);
+        assert_eq!(fs::read(&exe).unwrap(), b"old executable");
+        assert_eq!(fs::read(&data).unwrap(), b"old application data");
+        assert_eq!(fs::read(dir.join(APP_METADATA_CONFIG)).unwrap(), before);
+
+        drop(blocker);
+        let compress = |bytes: &[u8]| {
+            let mut encoded = Vec::new();
+            {
+                let mut writer = brotli::CompressorWriter::new(&mut encoded, 4096, 4, 20);
+                writer.write_all(bytes).unwrap();
+            }
+            &*Box::leak(encoded.into_boxed_slice()) as &'static [u8]
+        };
+        reader.files[0].raw = compress(b"new application data");
+        reader.files[1].raw = compress(b"new executable");
+        extract_windows_package(&reader, dir, false, &[], &mut ui).unwrap();
+        assert_eq!(fs::read(&exe).unwrap(), b"new executable");
+        assert_eq!(fs::read(&data).unwrap(), b"new application data");
+        assert!(is_timestamp_matches(dir, &mut timestamp));
+        assert!(!ui);
+    }
 
     #[test]
     fn resolve_within_rejects_paths_that_escape() {

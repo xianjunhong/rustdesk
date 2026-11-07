@@ -22,6 +22,7 @@ import 'package:bot_toast/bot_toast.dart';
 
 import '../../common/widgets/dialog.dart';
 import '../../models/platform_model.dart';
+import '../../models/tomdesk_role.dart';
 
 class _MenuTheme {
   static const Color blueColor = MyTheme.button;
@@ -140,7 +141,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _RelativeMouseModeHint(tabController: tabController),
-            const AddButton(),
+            if (!isTomDeskController) const AddButton(),
           ],
         ),
         selectedBorderColor: MyTheme.accent,

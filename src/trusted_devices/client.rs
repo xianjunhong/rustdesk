@@ -16,6 +16,9 @@ pub struct Session {
     supported: bool,
     requested: bool,
     legacy: bool,
+    // Shares the lifetime of this transport's outstanding login request.
+    #[cfg(windows)]
+    pub(crate) pair_activation: Option<crate::tomdesk_account::PairActivationProof>,
 }
 
 impl Session {

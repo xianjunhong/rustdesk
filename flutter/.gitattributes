@@ -1,1 +1,6 @@
 * text=auto
+# Preserve pinned bridge checksums on Windows checkouts.
+/lib/generated_bridge.dart text eol=lf
+/lib/generated_bridge.freezed.dart text eol=lf
+/ios/Runner/bridge_generated.h text eol=lf
+/macos/Runner/bridge_generated.h text eol=lf

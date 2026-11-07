@@ -9,6 +9,7 @@
 
 #include "win32_desktop.h"
 #include "flutter_window.h"
+#include "receiver_window_relaunch.h"
 #include "utils.h"
 #include "service_control.h"
 
@@ -26,6 +27,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 {
   if (auto result = service_control::HandleCommand(command_line)) {
     return static_cast<int>(*result);
+  }
+  std::vector<std::string> command_line_arguments = GetCommandLineArguments();
+  if (command_line_arguments.empty() && receiver_window::RestoreExistingWindow()) {
+    return EXIT_SUCCESS;
   }
   HINSTANCE hInstance = LoadLibraryA("librustdesk.dll");
   if (!hInstance)
@@ -47,8 +52,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     std::cout << "Failed to get free_c_args." << std::endl;
     return EXIT_FAILURE;
   }
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
   // Remove possible trailing whitespace from command line arguments
   for (auto& argument : command_line_arguments) {
     argument.erase(argument.find_last_not_of(" \n\r\t"));
@@ -84,7 +87,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
         command_line_arguments.end());
   }
 
-  std::wstring app_name = L"RustDesk";
+  std::wstring app_name = L"DogShare";
   FUNC_RUSTDESK_GET_APP_NAME get_rustdesk_app_name = (FUNC_RUSTDESK_GET_APP_NAME)GetProcAddress(hInstance, "get_rustdesk_app_name");
   if (get_rustdesk_app_name) {
     wchar_t app_name_buffer[512] = {0};

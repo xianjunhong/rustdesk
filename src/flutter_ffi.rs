@@ -747,6 +747,10 @@ pub fn session_close_terminal(session_id: SessionID, terminal_id: i32) {
 
 pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        if name == crate::tomdesk_subtitle::BRIDGE_COMMAND {
+            session.send_tomdesk_subtitle(&value);
+            return;
+        }
         session.set_option(name, value);
     }
 }
@@ -1143,11 +1147,11 @@ pub fn main_get_socks() -> Vec<String> {
 }
 
 pub fn main_get_app_name() -> String {
-    get_app_name()
+    crate::get_display_app_name()
 }
 
 pub fn main_get_app_name_sync() -> SyncReturn<String> {
-    SyncReturn(get_app_name())
+    SyncReturn(crate::get_display_app_name())
 }
 
 pub fn main_uri_prefix_sync() -> SyncReturn<String> {
@@ -1208,6 +1212,9 @@ pub fn main_discover() {
 }
 
 pub fn main_get_api_server() -> String {
+    #[cfg(windows)]
+    return crate::tomdesk_account::API_SERVER.to_owned();
+    #[cfg(not(windows))]
     get_api_server()
 }
 
@@ -2553,11 +2560,11 @@ pub fn main_support_remove_wallpaper() -> bool {
 }
 
 pub fn is_incoming_only() -> SyncReturn<bool> {
-    SyncReturn(config::is_incoming_only())
+    SyncReturn(crate::tomdesk_role::is_incoming_only())
 }
 
 pub fn is_outgoing_only() -> SyncReturn<bool> {
-    SyncReturn(config::is_outgoing_only())
+    SyncReturn(crate::tomdesk_role::is_outgoing_only())
 }
 
 pub fn is_custom_client() -> SyncReturn<bool> {

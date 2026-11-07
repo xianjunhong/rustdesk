@@ -361,6 +361,9 @@ pub enum Data {
     ChatMessage {
         text: String,
     },
+    TomDeskSubtitle {
+        frame: String,
+    },
     SwitchPermission {
         name: String,
         enabled: bool,

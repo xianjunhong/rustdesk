@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>TomDesk 配对账号管理</title>
+  <link rel="stylesheet" href="./assets/app.css">
+  <script defer src="./assets/app.js"></script>
+</head>
+<body>
+  <main id="session-loading" class="auth-screen" aria-live="polite">
+    <div class="loading-state"><span class="brand-mark" aria-hidden="true"></span>正在检查登录状态…</div>
+  </main>
+  <main id="auth-screen" class="auth-screen" hidden>
+    <section class="auth-card" aria-labelledby="login-title">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>TomDesk</span></div>
+      <div class="auth-heading">
+        <p class="eyebrow">管理员后台</p>
+        <h1 id="login-title">配对账号管理</h1>
+        <p class="muted">登录以管理配对、绑定设备和操作记录。</p>
+      </div>
+      <form id="auth-form">
+        <label for="admin-username">管理员账号</label>
+        <input id="admin-username" name="username" type="text" autocomplete="username" maxlength="64" required>
+        <label for="admin-password">密码</label>
+        <input id="admin-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required>
+        <p class="form-error" id="login-error" role="alert" hidden></p>
+        <button class="button primary full-width" id="login-submit" type="submit">登录</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="dashboard" class="dashboard" hidden>
+    <aside class="sidebar" aria-label="后台导航">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>TomDesk</span></div>
+      <p class="sidebar-caption">管理员后台</p>
+      <nav class="nav">
+        <button type="button" class="nav-item" id="tab-pairs" aria-controls="panel-pairs" aria-current="page">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="2.5" y="5" width="8" height="12" rx="2"/><rect x="13.5" y="7" width="8" height="12" rx="2"/><path d="M7 20h2m6-16h2"/></svg>
+          配对账号
+        </button>
+        <button type="button" class="nav-item" id="tab-events" aria-controls="panel-events">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M8 8h8m-8 4h8m-8 4h5"/></svg>
+          活动与审计
+        </button>
+      </nav>
+      <div class="operator">
+        <span class="operator-caption">当前管理员</span>
+        <strong id="operator-name"></strong>
+        <button class="button ghost" type="button" id="logout">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="workspace" id="workspace">
+      <div class="notice" id="notice" hidden>
+        <p id="notice-text" role="status"></p>
+        <button class="button secondary small" id="download-credentials" type="button" hidden>下载本次 CSV</button>
+      </div>
+      <section id="panel-pairs" aria-labelledby="pair-heading">
+        <header class="page-heading">
+          <div>
+            <p class="eyebrow">账号管理</p>
+            <h1 id="pair-heading" tabindex="-1">配对账号</h1>
+            <p class="muted">查看配对有效期，以及 A、B 两端的账号密码、绑定设备和在线状态。</p>
+          </div>
+          <button class="button primary" type="button" id="pair-create">＋ 生成配对</button>
+        </header>
+        <section class="data-card" aria-label="配对列表">
+          <div class="toolbar">
+            <form class="search-form" id="pair-search">
+              <label class="sr-only" for="pair-query">搜索配对编号或账号</label>
+              <input id="pair-query" type="search" maxlength="100" placeholder="搜索配对编号或账号">
+              <button class="button secondary" type="submit">搜索</button>
+            </form>
+            <button class="button secondary" type="button" id="pair-refresh">刷新</button>
+          </div>
+          <div id="pair-content" class="data-content" aria-live="polite"></div>
+          <footer class="pager">
+            <span class="muted" id="pair-meta"></span>
+            <div class="pager-controls" aria-label="配对列表翻页">
+              <button class="button secondary" id="pair-prev" type="button" disabled>上一页</button>
+              <button class="button secondary" id="pair-next" type="button" disabled>下一页</button>
+            </div>
+          </footer>
+        </section>
+        <p class="status-note muted">列表每 30 秒尝试刷新。掉线根据最近活动判断；已建立的远控通常在下一次授权检查时断开，正常间隔为 30 秒。</p>
+      </section>
+      <section id="panel-events" aria-labelledby="event-heading" hidden>
+        <header class="page-heading">
+          <div>
+            <p class="eyebrow">操作记录</p>
+            <h1 id="event-heading" tabindex="-1">活动与审计</h1>
+            <p class="muted">查看设备活动和管理员操作，按本机时间从新到旧排列。</p>
+          </div>
+        </header>
+        <section class="data-card" aria-label="活动与审计列表">
+          <div class="toolbar">
+            <form class="search-form" id="event-search">
+              <label class="sr-only" for="event-filter">按配对编号筛选</label>
+              <input id="event-filter" type="search" maxlength="100" placeholder="输入完整配对编号">
+              <button class="button secondary" type="submit">筛选</button>
+              <button class="button ghost" id="event-clear" type="button" hidden>清除筛选</button>
+            </form>
+            <button class="button secondary" type="button" id="event-refresh">刷新</button>
+          </div>
+          <div id="event-content" class="data-content" aria-live="polite"></div>
+          <footer class="pager">
+            <span class="muted" id="event-meta"></span>
+            <div class="pager-controls" aria-label="活动记录翻页">
+              <button class="button secondary" id="event-prev" type="button" disabled>上一页</button>
+              <button class="button secondary" id="event-next" type="button" disabled>下一页</button>
+            </div>
+          </footer>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="dialog-create" aria-labelledby="create-title">
+    <form id="create-form">
+      <h2 id="create-title">生成配对账号</h2>
+      <p class="muted">每组生成一个 A 控制端账号和一个 B 被控端账号。A 首次看到 B 的远控画面后，有效期为 24 小时。</p>
+      <label for="create-count">配对组数</label>
+      <input id="create-count" name="count" type="number" inputmode="numeric" min="1" max="25" value="1" required>
+      <p class="hint">一次可生成 1–25 组。生成后可在配对列表查看密码，也可以下载本次 CSV。</p>
+      <p id="create-error" class="form-error" role="alert" hidden></p>
+      <footer class="dialog-actions">
+        <button class="button secondary" data-close type="button">取消</button>
+        <button class="button primary" id="create-submit" type="submit">生成</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-manage" aria-labelledby="action-title">
+    <form id="action-form">
+      <h2 id="action-title">管理配对</h2>
+      <p class="muted monospace break-word" id="action-pair"></p>
+      <label for="action-side">操作范围</label>
+      <select id="action-side">
+        <option value="both">整组（A 和 B）</option>
+        <option value="a">A 控制端</option>
+        <option value="b">B 被控端</option>
+      </select>
+      <label for="action-kind">操作</label>
+      <select id="action-kind">
+        <option value="kick">踢下线</option>
+        <option value="disable">停用</option>
+        <option value="enable">启用</option>
+        <option value="reset_password">重置密码</option>
+        <option value="renew" hidden disabled>续期</option>
+      </select>
+      <p class="hint" id="action-hint" aria-live="polite"></p>
+      <p class="form-error" id="action-error" role="alert" hidden></p>
+      <footer class="dialog-actions">
+        <button class="button secondary" data-close type="button">取消</button>
+        <button class="button primary" id="action-submit" type="submit">确认</button>
+      </footer>
+    </form>
+  </dialog>
+</body>
+</html>

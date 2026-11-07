@@ -6,6 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
+import 'package:flutter_hbb/models/tomdesk_account_gate.dart';
+import 'package:flutter_hbb/models/tomdesk_role.dart';
+import 'package:flutter_hbb/models/tomdesk_receiver_window.dart';
 import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -696,6 +699,94 @@ class LoginWidgetUserPass extends StatelessWidget {
   }
 }
 
+class _PairedAccountLoginFields extends StatelessWidget {
+  const _PairedAccountLoginFields({
+    required this.username,
+    required this.password,
+    required this.userFocusNode,
+    required this.usernameMsg,
+    required this.passwordMsg,
+    required this.isInProgress,
+    required this.onLogin,
+    required this.hint,
+  });
+
+  final TextEditingController username;
+  final TextEditingController password;
+  final FocusNode userFocusNode;
+  final String? usernameMsg;
+  final String? passwordMsg;
+  final bool isInProgress;
+  final VoidCallback onLogin;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(color: colors.outlineVariant),
+    );
+    return Theme(
+      data: theme.copyWith(
+        inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+          filled: true,
+          fillColor: colors.surfaceContainerHighest.withOpacity(0.35),
+          border: border,
+          enabledBorder: border,
+          focusedBorder: border.copyWith(
+            borderSide: BorderSide(color: colors.primary, width: 1.5),
+          ),
+        ),
+      ),
+      child: SizedBox(
+        width: 320,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DialogTextField(
+              title: translate(DialogTextField.kUsernameTitle),
+              controller: username,
+              focusNode: userFocusNode,
+              prefixIcon: DialogTextField.kUsernameIcon,
+              errorText: usernameMsg,
+            ),
+            const SizedBox(height: 6),
+            PasswordWidget(
+              controller: password,
+              autoFocus: false,
+              reRequestFocus: true,
+              errorText: passwordMsg,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 44,
+              child: FilledButton(
+                onPressed: isInProgress ? null : onLogin,
+                child: isInProgress
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(translate('Login')),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              translate(hint),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 const kAuthReqTypeOidc = 'oidc/';
 
 Future<bool?>? _activeLoginDialog;
@@ -713,7 +804,9 @@ Future<bool?> loginDialog() {
 
 Future<bool?> _openLoginDialogOnce() async {
   try {
-    return await _openLoginDialog();
+    final result = await _openLoginDialog();
+    await collapseTomDeskReceiverAfterLogin(result);
+    return result;
   } finally {
     _activeLoginDialog = null;
   }
@@ -750,7 +843,9 @@ Future<bool?> _openLoginDialog() async {
     }
   }
 
-  Future.delayed(Duration.zero, fetchLoginOptions);
+  if (!TomDeskAccountGate.isRequired) {
+    Future.delayed(Duration.zero, fetchLoginOptions);
+  }
 
   final res = await gFFI.dialogManager.show<bool>((setState, close, context) {
     username.addListener(() {
@@ -775,11 +870,29 @@ Future<bool?> _openLoginDialog() async {
       switch (resp.type) {
         case HttpType.kAuthResTypeToken:
           if (resp.access_token != null) {
+            final requiresTomDeskAccount = TomDeskAccountGate.isRequired;
             if (storeIfAccessToken) {
               await bind.mainSetLocalOption(
                   key: 'access_token', value: resp.access_token!);
-              await bind.mainSetLocalOption(
-                  key: 'user_info', value: jsonEncode(resp.user ?? {}));
+              if (!requiresTomDeskAccount) {
+                await bind.mainSetLocalOption(
+                    key: 'user_info', value: jsonEncode(resp.user ?? {}));
+              }
+            }
+            if (requiresTomDeskAccount) {
+              if (bind.mainGetLocalOption(key: 'access_token') !=
+                  resp.access_token) {
+                throw RequestException(0, tomDeskCredentialStoreFailed);
+              }
+              final account = TomDeskAccountGate.instance;
+              if (storeIfAccessToken) {
+                // Fence off any periodic check begun while the old credential
+                // was still readable, in both Dart and the native lease.
+                account.invalidate();
+              }
+              if (!await account.refresh()) {
+                throw RequestException(0, tomDeskAccountUnavailable);
+              }
             }
             if (close != null) {
               close(true);
@@ -848,12 +961,48 @@ Future<bool?> _openLoginDialog() async {
             type: HttpType.kAuthReqTypeAccount));
         await handleLoginResponse(resp, true, close);
       } on RequestException catch (err) {
-        passwordMsg = translate(err.cause);
+        passwordMsg = TomDeskAccountGate.isRequired
+            ? tomDeskLoginErrorText(err.cause)
+            : translate(err.cause);
       } catch (err) {
-        passwordMsg = "Unknown Error: $err";
+        passwordMsg = TomDeskAccountGate.isRequired
+            ? translate(tomDeskAccountUnavailable)
+            : "Unknown Error: $err";
       }
       curOP.value = '';
       setState(() => isInProgress = false);
+    }
+
+    final pairedRole = tomDeskClientRole;
+    if (pairedRole != null) {
+      return CustomAlertDialog(
+        title: Row(
+          children: [
+            Expanded(child: Text(translate('Login'))),
+            IconButton(
+              tooltip: translate('Close'),
+              onPressed: onDialogCancel,
+              icon: const Icon(Icons.close, size: 20),
+            ),
+          ],
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(24, 12, 12, 0),
+        contentBoxConstraints: const BoxConstraints(maxWidth: 320),
+        content: _PairedAccountLoginFields(
+          hint: pairedRole == 'receiver'
+              ? tomDeskReceiverConsent
+              : 'Accounts are managed by your administrator.',
+          username: username,
+          password: password,
+          userFocusNode: userFocusNode,
+          usernameMsg: usernameMsg,
+          passwordMsg: passwordMsg,
+          isInProgress: isInProgress,
+          onLogin: onLogin,
+        ),
+        onCancel: onDialogCancel,
+        onSubmit: onLogin,
+      );
     }
 
     thirdAuthWidget() => Obx(() {
@@ -985,7 +1134,13 @@ Future<bool?> _openLoginDialog() async {
             onLogin: onLogin,
             userFocusNode: userFocusNode,
           ),
-          thirdAuthWidget(),
+          if (!TomDeskAccountGate.isRequired) thirdAuthWidget(),
+          if (TomDeskAccountGate.isRequired)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(translate(isTomDeskReceiver ? tomDeskReceiverConsent
+                  : 'Accounts are managed by your administrator.')),
+            ),
         ],
       ),
       onCancel: onDialogCancel,

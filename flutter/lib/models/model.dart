@@ -43,6 +43,7 @@ import '../utils/image.dart' as img;
 import '../common/widgets/dialog.dart';
 import 'input_model.dart';
 import 'platform_model.dart';
+import 'tomdesk_role.dart';
 import 'package:flutter_hbb/utils/scale.dart';
 
 import 'package:flutter_hbb/generated_bridge.dart'
@@ -365,6 +366,8 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'chat_server_mode') {
         parent.target?.chatModel
             .receive(int.parse(evt['id'] as String), evt['text'] ?? '');
+      } else if (name == 'tomdesk_subtitle') {
+        parent.target?.chatModel.receiveRemoteSubtitle(evt);
       } else if (name == 'terminal_response') {
         parent.target?.routeTerminalResponse(evt);
       } else if (name == 'file_dir') {
@@ -892,6 +895,11 @@ class FfiModel with ChangeNotifier {
     final title = evt['title'];
     final text = evt['text'];
     final link = evt['link'];
+    if (title == 'Connection Error' ||
+        type == 'restarting' ||
+        type == 'restarting-show') {
+      parent.target?.chatModel.closeTextOverlay();
+    }
 
     // The peer-gone detector reconnects under `restarting-show` rather than an error title, so
     // it needs naming here too. By its own title, not the type: an explicitly restarted remote
@@ -912,6 +920,17 @@ class FfiModel with ChangeNotifier {
         type == 'restarting' ||
         (type is String && type.contains('error'))) {
       parent.target?.inputModel.setRelativeMouseMode(false);
+    }
+
+    if ((type == 'on-uac' ||
+            type == 'on-foreground-elevated' ||
+            type == 'wait-uac' ||
+            type == 'elevation-error' ||
+            (type == 'custom-nocancel-success' &&
+                title == 'Successful' &&
+                text == 'Elevate successfully')) &&
+        isTomDeskController) {
+      return;
     }
 
     if (type == 're-input-password') {
@@ -4008,7 +4027,7 @@ class ElevationModel with ChangeNotifier {
   ElevationModel(this.parent);
   bool _running = false;
   bool _canElevate = false;
-  bool get showRequestMenu => _canElevate && !_running;
+  bool get showRequestMenu => _canElevate && !_running && !isTomDeskController;
   onPeerInfo(PeerInfo pi) {
     _canElevate = pi.platform == kPeerPlatformWindows && pi.sasEnabled == false;
     _running = false;

@@ -16,7 +16,7 @@ use base::message_proto::*;
 use bytes::Bytes;
 use hbb_common::{
     allow_err,
-    config::{Config, LocalConfig, PeerConfig},
+    config::{Config, PeerConfig},
     get_version_number, log,
     rendezvous_proto::ConnType,
     tokio::{
@@ -578,8 +578,15 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg));
     }
 
+    #[cfg(windows)]
+    pub fn get_audit_server(&self, _typ: String) -> String {
+        // The account issuer does not accept RustDesk Pro audit remarks.
+        String::new()
+    }
+
+    #[cfg(not(windows))]
     pub fn get_audit_server(&self, typ: String) -> String {
-        if LocalConfig::get_option("access_token").is_empty() {
+        if crate::get_local_option("access_token").is_empty() {
             return "".to_owned();
         }
         crate::get_audit_server(
@@ -790,6 +797,15 @@ impl<T: InvokeUiSession> Session<T> {
         let mut msg_out = Message::new();
         msg_out.set_misc(misc);
         self.send(Data::Message(msg_out));
+    }
+
+    #[cfg(feature = "flutter")]
+    pub fn send_tomdesk_subtitle(&self, frame: &str) {
+        if crate::tomdesk_role::is_controller() && self.is_default() {
+            if let Some(message) = crate::tomdesk_subtitle::from_ui_json(frame) {
+                self.send(Data::Message(message));
+            }
+        }
     }
 
     // Terminal methods
@@ -1511,6 +1527,10 @@ impl<T: InvokeUiSession> Session<T> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     #[tokio::main(flavor = "current_thread")]
     pub async fn switch_sides(&self) {
+        if crate::tomdesk_role::is_split() {
+            self.on_error("Switching sides is unavailable in DogShare A/B.");
+            return;
+        }
         match crate::ipc::connect(1000, "").await {
             Ok(mut conn) => {
                 if conn
@@ -1977,7 +1997,10 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let (sender, mut receiver) = mpsc::unbounded_channel::<Data>();
     *handler.sender.write().unwrap() = Some(sender.clone());
-    let token = LocalConfig::get_option("access_token");
+    #[cfg(windows)]
+    let token = String::new();
+    #[cfg(not(windows))]
+    let token = crate::get_local_option("access_token");
     let key = crate::get_key(false).await;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if handler.is_port_forward() {

@@ -226,7 +226,7 @@ pub unsafe extern "C" fn free_c_args(ptr: *mut *mut c_char, len: c_int) {
 #[cfg(windows)]
 #[no_mangle]
 pub unsafe extern "C" fn get_rustdesk_app_name(buffer: *mut u16, length: i32) -> i32 {
-    let name = crate::platform::wide_string(&crate::get_app_name());
+    let name = crate::platform::wide_string(&crate::get_display_app_name());
     if length > name.len() as i32 {
         std::ptr::copy_nonoverlapping(name.as_ptr(), buffer, name.len());
         return 0;
@@ -1560,6 +1560,13 @@ pub mod connection_manager {
             self.push_event(
                 "chat_server_mode",
                 &[("id", &id.to_string()), ("text", &text)],
+            );
+        }
+
+        fn tomdesk_subtitle(&self, id: i32, frame: String) {
+            self.push_event(
+                "tomdesk_subtitle",
+                &[("id", &id.to_string()), ("frame", &frame)],
             );
         }
 

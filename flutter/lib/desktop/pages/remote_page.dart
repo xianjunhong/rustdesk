@@ -21,6 +21,7 @@ import '../../models/shortcut_model.dart';
 import '../../common/shared_state.dart';
 import '../../utils/image.dart';
 import '../widgets/remote_toolbar.dart';
+import '../widgets/tomdesk_subtitle_panel.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 import '../widgets/tabbar_widget.dart';
 import 'macos_full_screen_focus_recovery.dart';
@@ -292,7 +293,9 @@ class _RemotePageState extends State<RemotePage>
   // Every Windows requestFocus() must pass this, or a blocking dialog or an
   // inactive tab could hand remote input to this page.
   bool get _windowsCanFocusRemoteInput =>
-      _isSelectedTab && _blockableOverlayState.middleBlocked.isFalse;
+      _isSelectedTab &&
+      _blockableOverlayState.middleBlocked.isFalse &&
+      !_ffi.dialogManager.existing(tomDeskSubtitleDialogTag);
 
   bool get _isMacOSKeyboardContextActive {
     return stateGlobal.isFocused.value && !_isWindowBlur && _isSelectedTab;

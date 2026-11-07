@@ -5,7 +5,10 @@ import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
+import '../../desktop/widgets/tomdesk_subtitle_panel.dart';
 import '../../mobile/pages/home_page.dart';
+import 'text_overlay_controls.dart';
+import '../../models/tomdesk_role.dart';
 
 enum ChatPageType {
   mobileMain,
@@ -93,9 +96,15 @@ class ChatPage extends StatelessWidget implements PageShape {
                                 (e) => e.id == chatModel.currentKey.connId)
                             ?.disconnected ==
                         true;
-            return Stack(
+            final pairedComposer = chatModel.supportsOutgoingSubtitles;
+            final chatPage = Stack(
               children: [
                 LayoutBuilder(builder: (context, constraints) {
+                  final sendButton = defaultSendButton(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                    color: MyTheme.accent,
+                    icon: Icons.send_rounded,
+                  );
                   final chat = DashChat(
                     onSend: chatModel.send,
                     currentUser: chatModel.me,
@@ -106,15 +115,19 @@ class ChatPage extends StatelessWidget implements PageShape {
                     inputOptions: InputOptions(
                       focusNode: chatModel.inputNode,
                       textController: chatModel.textController,
+                      alwaysShowSend: pairedComposer,
                       inputTextStyle: TextStyle(
-                          fontSize: 14,
+                          fontSize: pairedComposer ? 15 : 14,
                           color: Theme.of(context).textTheme.titleLarge?.color),
                       inputDecoration: InputDecoration(
                         isDense: true,
                         hintText: translate('Write a message'),
                         filled: true,
                         fillColor: Theme.of(context).colorScheme.background,
-                        contentPadding: EdgeInsets.all(10),
+                        contentPadding: pairedComposer
+                            ? const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 14)
+                            : const EdgeInsets.all(10),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10.0),
                           borderSide: const BorderSide(
@@ -122,13 +135,39 @@ class ChatPage extends StatelessWidget implements PageShape {
                             style: BorderStyle.solid,
                           ),
                         ),
+                        suffixIcon: pairedComposer
+                            ? ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: chatModel.textController,
+                                builder: (context, input, _) => IconButton(
+                                  tooltip: translate('Clear'),
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: input.text.isEmpty
+                                      ? null
+                                      : chatModel.clearDraft,
+                                ),
+                              )
+                            : null,
+                        suffixIconConstraints: pairedComposer
+                            ? const BoxConstraints.tightFor(
+                                width: 32, height: 36)
+                            : null,
                       ),
-                      sendButtonBuilder: defaultSendButton(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                        color: MyTheme.accent,
-                        icon: Icons.send_rounded,
-                      ),
+                      sendButtonBuilder: pairedComposer
+                          ? (send) => ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: chatModel.textController,
+                                builder: (context, input, _) => IconButton(
+                                  tooltip: translate('Send'),
+                                  icon: const Icon(Icons.send),
+                                  color: MyTheme.accent,
+                                  onPressed: input.text.trim().isEmpty ||
+                                          (input.isComposingRangeValid &&
+                                              !input.composing.isCollapsed)
+                                      ? null
+                                      : send,
+                                ),
+                              )
+                          : sendButton,
                     ),
                     messageOptions: MessageOptions(
                       showOtherUsersAvatar: false,
@@ -172,6 +211,25 @@ class ChatPage extends StatelessWidget implements PageShape {
                 }),
               ],
             ).paddingOnly(bottom: 8);
+            if (!isWindows) return chatPage;
+            final role = tomDeskClientRole;
+            final session = chatModel.parent.target;
+            if (session != null && chatModel.supportsOutgoingSubtitles) {
+              return Column(children: [
+                TomDeskSubtitleChatControls(
+                    ffi: session, draft: chatModel.subtitleDraft),
+                Expanded(child: chatPage),
+              ]);
+            }
+            if (role != null) return chatPage;
+            return Column(children: [
+              TextOverlayControls(
+                source: chatModel.textOverlaySource(chatModel.currentKey),
+                label: chatModel.currentKey.peerId,
+                available: !readOnly && chatModel.currentKey.peerId.isNotEmpty,
+              ),
+              Expanded(child: chatPage),
+            ]);
           },
         ),
       ),

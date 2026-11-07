@@ -20,11 +20,16 @@ import 'package:window_size/window_size.dart' as window_size;
 import '../../common.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
+import '../../models/tomdesk_role.dart';
+import '../../models/tomdesk_subtitle_frame.dart';
 import '../../common/shared_state.dart';
 import './popup_menu.dart';
 import './kb_layout_type_chooser.dart';
 import 'package:flutter_hbb/utils/scale.dart';
 import 'package:flutter_hbb/common/widgets/custom_scale_base.dart';
+
+bool _usePairedControllerToolbar(FFI ffi) =>
+    isTomDeskController && ffi.connType == ConnType.defaultConn;
 
 enum _ToolbarEdge { top, right, bottom, left }
 
@@ -482,6 +487,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   bool _pendingDockingOptionSync = false;
   int _dockingOptionSyncSerial = 0;
   int _dragEpoch = 0;
+  Worker? _subtitleReadyWorker;
 
   int get windowId => stateGlobal.windowId;
 
@@ -627,6 +633,15 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   initState() {
     super.initState();
 
+    if (isTomDeskController && widget.ffi.connType == ConnType.defaultConn) {
+      _subtitleReadyWorker = ever(ffiModel.waitForFirstImage, (bool waiting) {
+        final draft = widget.ffi.chatModel.subtitleDraft;
+        if (!waiting && pi.isSet.isTrue && draft.enabled) {
+          sendTomDeskSubtitleFrame(widget.ffi.sessionId, draft.frame);
+        }
+      });
+    }
+
     final cached = _cachedToolbarDockingOptions(widget.ffi.sessionId);
     final multiEdgeEnabled =
         mainGetLocalBoolOptionSync(kOptionAllowMultiEdgeToolbarDock);
@@ -677,6 +692,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
 
   @override
   dispose() {
+    _subtitleReadyWorker?.dispose();
     ++_dockingOptionSyncSerial;
     widget.onEnterOrLeaveImageCleaner(identityHashCode(this));
     super.dispose();
@@ -804,54 +820,64 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       BuildContext context, _ToolbarEdge edge, bool isHorizontal) {
     final List<Widget> toolbarItems = [];
     toolbarItems.add(_PinMenu(state: widget.state));
-    toolbarItems.add(Obx(() {
-      final privacyModeState = PrivacyModeState.find(widget.id);
-      if ((privacyModeState.isEmpty ||
-              allowDisplaySwitchInPrivacyMode(pi, privacyModeState.value)) &&
-          pi.displaysCount.value > 1 &&
-          mainGetLocalBoolOptionSync(kOptionAllowMonitorSwitchMainToolbar)) {
-        return _MainMonitorSwitchButton(id: widget.id, ffi: widget.ffi);
-      } else {
-        return const Offstage();
+    if (_usePairedControllerToolbar(widget.ffi)) {
+      toolbarItems.addAll([
+        _PairedAdaptiveViewButton(ffi: widget.ffi),
+        _PairedViewModeMenu(id: widget.id, ffi: widget.ffi),
+        _ChatMenu(id: widget.id, ffi: widget.ffi, pairedController: true),
+        const _RecordMenu(alwaysVisible: true),
+        _CloseMenu(id: widget.id, ffi: widget.ffi),
+      ]);
+    } else {
+      toolbarItems.add(Obx(() {
+        final privacyModeState = PrivacyModeState.find(widget.id);
+        if ((privacyModeState.isEmpty ||
+                allowDisplaySwitchInPrivacyMode(pi, privacyModeState.value)) &&
+            pi.displaysCount.value > 1 &&
+            mainGetLocalBoolOptionSync(kOptionAllowMonitorSwitchMainToolbar)) {
+          return _MainMonitorSwitchButton(id: widget.id, ffi: widget.ffi);
+        } else {
+          return const Offstage();
+        }
+      }));
+      if (!isWebDesktop) {
+        toolbarItems.add(_MobileActionMenu(ffi: widget.ffi));
       }
-    }));
-    if (!isWebDesktop) {
-      toolbarItems.add(_MobileActionMenu(ffi: widget.ffi));
-    }
 
-    toolbarItems.add(Obx(() {
-      final privacyModeState = PrivacyModeState.find(widget.id);
-      if ((privacyModeState.isEmpty ||
-              allowDisplaySwitchInPrivacyMode(pi, privacyModeState.value)) &&
-          pi.displaysCount.value > 1) {
-        return _MonitorMenu(
-            id: widget.id,
-            ffi: widget.ffi,
-            edge: edge,
-            setRemoteState: widget.setRemoteState);
-      } else {
-        return Offstage();
+      toolbarItems.add(Obx(() {
+        final privacyModeState = PrivacyModeState.find(widget.id);
+        if ((privacyModeState.isEmpty ||
+                allowDisplaySwitchInPrivacyMode(pi, privacyModeState.value)) &&
+            pi.displaysCount.value > 1) {
+          return _MonitorMenu(
+              id: widget.id,
+              ffi: widget.ffi,
+              edge: edge,
+              setRemoteState: widget.setRemoteState);
+        } else {
+          return Offstage();
+        }
+      }));
+
+      toolbarItems
+          .add(_ControlMenu(id: widget.id, ffi: widget.ffi, state: widget.state));
+      toolbarItems.add(_DisplayMenu(
+        id: widget.id,
+        ffi: widget.ffi,
+        state: widget.state,
+        setFullscreen: _setFullscreen,
+      ));
+      // Do not show keyboard for camera connection type.
+      if (widget.ffi.connType == ConnType.defaultConn) {
+        toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
       }
-    }));
-
-    toolbarItems
-        .add(_ControlMenu(id: widget.id, ffi: widget.ffi, state: widget.state));
-    toolbarItems.add(_DisplayMenu(
-      id: widget.id,
-      ffi: widget.ffi,
-      state: widget.state,
-      setFullscreen: _setFullscreen,
-    ));
-    // Do not show keyboard for camera connection type.
-    if (widget.ffi.connType == ConnType.defaultConn) {
-      toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
+      toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
+      if (!isWeb) {
+        toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
+      }
+      if (!isWeb) toolbarItems.add(_RecordMenu());
+      toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     }
-    toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
-    if (!isWeb) {
-      toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
-    }
-    if (!isWeb) toolbarItems.add(_RecordMenu());
-    toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     final toolbarBorderRadius = BorderRadius.all(Radius.circular(4.0));
     // innerAxis: how the toolbar icons themselves flow.
     // outerAxis: how the toolbar block and the handle stack against each other
@@ -2817,13 +2843,83 @@ class _KeyboardMenu extends StatelessWidget {
   }
 }
 
+class _PairedAdaptiveViewButton extends StatelessWidget {
+  final FFI ffi;
+  const _PairedAdaptiveViewButton({required this.ffi});
+
+  @override
+  Widget build(BuildContext context) => _IconMenuButton(
+        assetName: 'assets/display.svg',
+        tooltip: 'Scale adaptive',
+        color: _ToolbarTheme.blueColor,
+        hoverColor: _ToolbarTheme.hoverBlueColor,
+        onPressed: () async {
+          await bind.sessionSetViewStyle(
+              sessionId: ffi.sessionId, value: kRemoteViewStyleAdaptive);
+          ffi.canvasModel.updateViewStyle();
+        },
+      );
+}
+
+class _PairedViewModeMenu extends StatelessWidget {
+  final String id;
+  final FFI ffi;
+  const _PairedViewModeMenu({required this.id, required this.ffi});
+
+  Future<void> _setViewOnly(bool? value) async {
+    final model = ffi.ffiModel;
+    if (value == null || value == model.viewOnly || !model.keyboard) return;
+    await bind.sessionToggleOption(
+        sessionId: ffi.sessionId, value: kOptionToggleViewOnly);
+    final viewOnly = await bind.sessionGetToggleOption(
+        sessionId: ffi.sessionId, arg: kOptionToggleViewOnly);
+    model.setViewOnly(id, viewOnly ?? value);
+    final showMyCursor = await bind.sessionGetToggleOption(
+        sessionId: ffi.sessionId, arg: kOptionToggleShowMyCursor);
+    model.setShowMyCursor(showMyCursor ?? value);
+  }
+
+  @override
+  Widget build(BuildContext context) => Consumer<FfiModel>(
+        builder: (context, model, child) {
+          final canSwitch =
+              versionCmp(model.pi.version, '1.2.0') >= 0 && model.keyboard;
+          return _IconSubmenuButton(
+            tooltip: 'Input Control',
+            svg: 'assets/keyboard_mouse.svg',
+            ffi: ffi,
+            color: _ToolbarTheme.blueColor,
+            hoverColor: _ToolbarTheme.hoverBlueColor,
+            menuChildrenGetter: (_) => [
+              RdoMenuButton<bool>(
+                value: false,
+                groupValue: model.viewOnly,
+                onChanged: canSwitch ? _setViewOnly : null,
+                child: Text(translate('Control Remote Desktop')),
+                ffi: ffi,
+              ),
+              RdoMenuButton<bool>(
+                value: true,
+                groupValue: model.viewOnly,
+                onChanged: canSwitch ? _setViewOnly : null,
+                child: Text(translate('View Mode')),
+                ffi: ffi,
+              ),
+            ],
+          );
+        },
+      );
+}
+
 class _ChatMenu extends StatefulWidget {
   final String id;
   final FFI ffi;
+  final bool pairedController;
   _ChatMenu({
     Key? key,
     required this.id,
     required this.ffi,
+    this.pairedController = false,
   }) : super(key: key);
 
   @override
@@ -2836,19 +2932,24 @@ class _ChatMenuState extends State<_ChatMenu> {
 
   @override
   Widget build(BuildContext context) {
-    if (isWeb) {
-      return buildTextChatButton();
-    } else {
-      return _IconSubmenuButton(
-          tooltip: 'Chat',
-          key: chatButtonKey,
-          svg: 'assets/chat.svg',
-          ffi: widget.ffi,
-          color: _ToolbarTheme.blueColor,
-          hoverColor: _ToolbarTheme.hoverBlueColor,
-          menuChildrenGetter: (_) => [textChat(), voiceCall()]);
-    }
+    if (isWeb) return buildTextChatButton();
+    if (!widget.pairedController) return _buildChatMenu();
+    return Obx(() =>
+        _buildChatMenu(status: widget.ffi.chatModel.voiceCallStatus.value));
   }
+
+  Widget _buildChatMenu(
+          {VoiceCallStatus status = VoiceCallStatus.notStarted}) =>
+      _IconSubmenuButton(
+        tooltip: 'Chat',
+        key: chatButtonKey,
+        svg: 'assets/chat.svg',
+        ffi: widget.ffi,
+        color: _ToolbarTheme.blueColor,
+        hoverColor: _ToolbarTheme.hoverBlueColor,
+        menuChildrenGetter: (menu) =>
+            [textChat(), ..._voiceCallItems(status, menu)],
+      );
 
   buildTextChatButton() {
     return _IconMenuButton(
@@ -2881,13 +2982,64 @@ class _ChatMenuState extends State<_ChatMenu> {
     widget.ffi.chatModel.toggleChatOverlay(chatInitPos: initPos);
   }
 
-  voiceCall() {
-    return MenuButton(
-      child: Text(translate('Voice call')),
-      ffi: widget.ffi,
-      onPressed: () =>
-          bind.sessionRequestVoiceCall(sessionId: widget.ffi.sessionId),
-    );
+  List<Widget> _voiceCallItems(
+      VoiceCallStatus status, _IconSubmenuButtonState menu) {
+    final ffi = widget.ffi;
+    final sessionId = ffi.sessionId;
+    final waiting = status == VoiceCallStatus.waitingForResponse;
+    final connected = status == VoiceCallStatus.connected;
+    const muteOption = 'disable-audio';
+    bool isMuted() =>
+        bind.sessionGetToggleOptionSync(sessionId: sessionId, arg: muteOption);
+    Widget muteControl() => CkbMenuButton(
+          ffi: ffi,
+          value: isMuted(),
+          child: Text(translate('Mute')),
+          onChanged: (value) async {
+            if (value == null || value == isMuted()) return;
+            await bind.sessionToggleOption(
+                sessionId: sessionId, value: muteOption);
+            if (menu.mounted) menu.setState(() {});
+          },
+        );
+
+    if (!waiting && !connected) {
+      return [
+        MenuButton(
+          child: Text(translate('Voice call')),
+          ffi: ffi,
+          onPressed: () => bind.sessionRequestVoiceCall(sessionId: sessionId),
+        ),
+        // A muted paired call cannot be answered by B. Let the user clear
+        // a saved mute before calling without changing the setting for them.
+        if (widget.pairedController && isMuted()) muteControl(),
+      ];
+    }
+
+    return [
+      const Divider(),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Semantics(
+          liveRegion: true,
+          child: Text(
+              "${translate('Voice call')}: ${translate(waiting ? 'Waiting' : 'Connected')}"),
+        ),
+      ),
+      if (connected) ...[
+        _SubmenuButton(
+          ffi: ffi,
+          child: Text(translate('Audio Input Device')),
+          menuChildren: [_buildVoiceCallAudioInput(ffi)],
+        ),
+        muteControl(),
+      ],
+      MenuButton(
+        child: Text(translate(waiting ? 'Cancel' : 'Stop voice call')),
+        ffi: ffi,
+        onPressed: () => bind.sessionCloseVoiceCall(sessionId: sessionId),
+      ),
+    ];
   }
 }
 
@@ -2903,33 +3055,8 @@ class _VoiceCallMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     menuChildrenGetter(_IconSubmenuButtonState state) {
-      final audioInput = AudioInput(
-        builder: (devices, currentDevice, setDevice) {
-          return Column(
-            children: devices
-                .map((d) => RdoMenuButton<String>(
-                      child: Container(
-                        child: Text(
-                          d,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        constraints: BoxConstraints(maxWidth: 250),
-                      ),
-                      value: d,
-                      groupValue: currentDevice,
-                      onChanged: (v) {
-                        if (v != null) setDevice(v);
-                      },
-                      ffi: ffi,
-                    ))
-                .toList(),
-          );
-        },
-        isCm: false,
-        isVoiceCall: true,
-      );
       return [
-        audioInput,
+        _buildVoiceCallAudioInput(ffi),
         Divider(),
         MenuButton(
           child: Text(translate('End call')),
@@ -2971,24 +3098,53 @@ class _VoiceCallMenu extends StatelessWidget {
   }
 }
 
+Widget _buildVoiceCallAudioInput(FFI ffi) => AudioInput(
+      builder: (devices, currentDevice, setDevice) {
+        return Column(
+          children: devices
+              .map((d) => RdoMenuButton<String>(
+                    child: Container(
+                      child: Text(
+                        d,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      constraints: BoxConstraints(maxWidth: 250),
+                    ),
+                    value: d,
+                    groupValue: currentDevice,
+                    onChanged: (v) {
+                      if (v != null) setDevice(v);
+                    },
+                    ffi: ffi,
+                  ))
+              .toList(),
+        );
+      },
+      isCm: false,
+      isVoiceCall: true,
+    );
+
 class _RecordMenu extends StatelessWidget {
-  const _RecordMenu({Key? key}) : super(key: key);
+  final bool alwaysVisible;
+  const _RecordMenu({Key? key, this.alwaysVisible = false}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     var ffi = Provider.of<FfiModel>(context);
     var recordingModel = Provider.of<RecordingModel>(context);
-    final hideRecordingButton =
-        bind.mainGetLocalOption(key: kOptionHideRecordingButton) == 'Y';
-    final visible = !hideRecordingButton &&
-        (recordingModel.start || ffi.permissions['recording'] != false);
-    if (!visible) return Offstage();
+    final canRecord =
+        recordingModel.start || ffi.permissions['recording'] != false;
+    if (!alwaysVisible &&
+        (!canRecord ||
+            bind.mainGetLocalOption(key: kOptionHideRecordingButton) == 'Y')) {
+      return Offstage();
+    }
     return _IconMenuButton(
       assetName: 'assets/rec.svg',
       tooltip: recordingModel.start
           ? 'Stop session recording'
           : 'Start session recording',
-      onPressed: () => recordingModel.toggle(),
+      onPressed: canRecord ? () => recordingModel.toggle() : null,
       color: recordingModel.start
           ? _ToolbarTheme.redColor
           : _ToolbarTheme.blueColor,
@@ -3561,6 +3717,7 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
       padding: MaterialStateProperty.all(EdgeInsets.zero),
     );
     final isFullscreen = stateGlobal.fullscreen;
+    final pairedController = _usePairedControllerToolbar(widget.ffi);
     const double iconSize = 20;
 
     buttonWrapper(VoidCallback? onPressed, Widget child,
@@ -3586,25 +3743,28 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildDraggable(context),
-        Obx(() => collapse.isTrue
-            ? _MinimizedMonitorSwitchButton(id: widget.id, ffi: widget.ffi)
-            : const Offstage()),
-        Obx(() => buttonWrapper(
-              () {
-                widget.setFullscreen(!isFullscreen.value);
-              },
-              Tooltip(
-                message: translate(
-                    isFullscreen.isTrue ? 'Exit Fullscreen' : 'Fullscreen'),
-                child: Icon(
-                  isFullscreen.isTrue
-                      ? Icons.fullscreen_exit
-                      : Icons.fullscreen,
-                  size: iconSize,
+        if (!pairedController)
+          Obx(() => collapse.isTrue
+              ? _MinimizedMonitorSwitchButton(id: widget.id, ffi: widget.ffi)
+              : const Offstage()),
+        Obx(() => pairedController && isFullscreen.isFalse
+            ? const Offstage()
+            : buttonWrapper(
+                () {
+                  widget.setFullscreen(!isFullscreen.value);
+                },
+                Tooltip(
+                  message: translate(
+                      isFullscreen.isTrue ? 'Exit Fullscreen' : 'Fullscreen'),
+                  child: Icon(
+                    isFullscreen.isTrue
+                        ? Icons.fullscreen_exit
+                        : Icons.fullscreen,
+                    size: iconSize,
+                  ),
                 ),
-              ),
-            )),
-        if (!isMacOS && !isWebDesktop)
+              )),
+        if (!pairedController && !isMacOS && !isWebDesktop)
           Obx(() => Offstage(
                 offstage: isFullscreen.isFalse,
                 child: buttonWrapper(

@@ -29,6 +29,8 @@ import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
 import 'mobile/widgets/deploy_dialog.dart';
 import 'models/platform_model.dart';
+import 'models/tomdesk_account_gate.dart';
+import 'models/tomdesk_receiver_window.dart';
 
 /// Basic window and launch properties.
 int? kWindowId;
@@ -124,6 +126,10 @@ Future<void> initEnv(String appType) async {
   // for convenience, use global FFI on mobile platform
   // focus on multi-ffi on desktop first
   await initGlobalFFI();
+  if (TomDeskAccountGate.isRequired) {
+    TomDeskAccountGate.instance.addListener(gFFI.userModel.updateTomDeskAccount);
+    TomDeskAccountGate.instance.initialize();
+  }
   // await Firebase.initializeApp();
   _registerEventHandler();
   // Update the system theme.
@@ -289,7 +295,8 @@ void runConnectionManagerScreen() async {
     const DesktopServerPage(),
     MyTheme.currentThemeMode(),
   );
-  final hide = await bind.cmGetConfig(name: "hide_cm") == 'true';
+  final hide = !isTomDeskReceiverConnectionManager &&
+      await bind.cmGetConfig(name: "hide_cm") == 'true';
   gFFI.serverModel.hideCm = hide;
   if (hide) {
     await hideCmWindow(isStartup: true);
@@ -302,8 +309,49 @@ void runConnectionManagerScreen() async {
 }
 
 bool _isCmReadyToShow = false;
+bool _receiverCmPresented = false;
+
+Future<void> _showReceiverCm({required bool isStartup}) async {
+  if (isStartup) {
+    await windowManager.waitUntilReadyToShow(
+      getHiddenTitleBarWindowOptions(
+        size: kConnectionManagerWindowSizeClosedChat,
+        alwaysOnTop: true,
+        skipTaskbar: null,
+      ),
+      null,
+    );
+    await windowManager.setSizeAlignment(
+        kConnectionManagerWindowSizeClosedChat, Alignment.topRight);
+    _isCmReadyToShow = true;
+  }
+  if (!_isCmReadyToShow ||
+      _receiverCmPresented ||
+      !gFFI.serverModel.clients
+          .any((client) => client.authorized && !client.disconnected)) {
+    return;
+  }
+
+  // A new client can arrive while startup is finishing. Only the first
+  // active client presents the window; later events leave its state alone.
+  _receiverCmPresented = true;
+  try {
+    if (!await showTomDeskReceiverConnectionMinimized() &&
+        _receiverCmPresented) {
+      // Keep the local disconnect control reachable without a taskbar entry.
+      await windowManager.show(inactive: true);
+    }
+  } catch (error) {
+    _receiverCmPresented = false;
+    debugPrint('Unable to present TomDesk connection details: $error');
+  }
+}
 
 showCmWindow({bool isStartup = false}) async {
+  if (isTomDeskReceiverConnectionManager) {
+    await _showReceiverCm(isStartup: isStartup);
+    return;
+  }
   if (isStartup) {
     WindowOptions windowOptions = getHiddenTitleBarWindowOptions(
         size: kConnectionManagerWindowSizeClosedChat, alwaysOnTop: true);
@@ -331,6 +379,12 @@ showCmWindow({bool isStartup = false}) async {
 }
 
 hideCmWindow({bool isStartup = false}) async {
+  if (isTomDeskReceiverConnectionManager) {
+    if (!_receiverCmPresented) return;
+    _receiverCmPresented = false;
+    await windowManager.hide();
+    return;
+  }
   if (isStartup) {
     WindowOptions windowOptions = getHiddenTitleBarWindowOptions(
         size: kConnectionManagerWindowSizeClosedChat);
@@ -402,7 +456,8 @@ WindowOptions getHiddenTitleBarWindowOptions(
     {bool isMainWindow = false,
     Size? size,
     bool center = false,
-    bool? alwaysOnTop}) {
+    bool? alwaysOnTop,
+    bool? skipTaskbar = false}) {
   var defaultTitleBarStyle = TitleBarStyle.hidden;
   // we do not hide titlebar on win7 because of the frame overflow.
   if (kUseCompatibleUiMode) {
@@ -412,7 +467,7 @@ WindowOptions getHiddenTitleBarWindowOptions(
     size: size,
     center: center,
     backgroundColor: (isMacOS && isMainWindow) ? null : Colors.transparent,
-    skipTaskbar: false,
+    skipTaskbar: skipTaskbar,
     titleBarStyle: defaultTitleBarStyle,
     alwaysOnTop: alwaysOnTop,
   );

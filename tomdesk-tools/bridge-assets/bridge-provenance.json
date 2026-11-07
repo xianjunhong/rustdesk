@@ -1,0 +1,17 @@
+{
+  "repository": "rustdesk/rustdesk",
+  "commit": "55786aaa5709ac0a450aabcf06f9d1fee3119908",
+  "run_id": 41745328480,
+  "artifact_id": 13282694407,
+  "official_digest": "sha256:038bbb3ddc085f08bea372b386953ced23772329db6b0649a8aaa58df6d30b4b",
+  "delivery_url": "https://nightly.link/rustdesk/rustdesk/actions/runs/41745328480/bridge-artifact.zip",
+  "archive_crc_verified": true,
+  "files": {
+    "flutter/ios/Runner/bridge_generated.h": "a36ca78f8388bfe8dee8fb479c1b6154f5e71466a993591607fb2e98be96c0ca",
+    "flutter/lib/generated_bridge.dart": "ca946acb4d43242a982a0d6f87d77ee3c18699389b1e96efa97f956433bc716a",
+    "flutter/lib/generated_bridge.freezed.dart": "c7e9daac122dffffc62b7cbbe6ad4f5013fbc332de3878aa7acb321b13ab9cad",
+    "flutter/macos/Runner/bridge_generated.h": "a36ca78f8388bfe8dee8fb479c1b6154f5e71466a993591607fb2e98be96c0ca",
+    "src/bridge_generated.io.rs": "c4982b6ab59cea3d29a3027cb06b4fdf4b57192af2027c70d62e5a001904cf0d",
+    "src/bridge_generated.rs": "78e826bcbe38fb0edc346bceff76a4e3a1474956b5fedfefd12e37dac7b01186"
+  }
+}

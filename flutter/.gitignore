@@ -54,3 +54,9 @@ flutter_export_environment.sh
 Flutter-Generated.xcconfig
 key.jks
 macos/rustdesk.xcodeproj/project.xcworkspace/
+
+# Pinned generated bridge files used by DogShare; see tools provenance.
+!/lib/generated_bridge.dart
+!/lib/generated_bridge.freezed.dart
+!/ios/Runner/bridge_generated.h
+!/macos/Runner/bridge_generated.h

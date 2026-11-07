@@ -1,1 +1,4 @@
 * text=auto
+# Preserve pinned bridge checksums on Windows checkouts.
+/src/bridge_generated.rs text eol=lf
+/src/bridge_generated.io.rs text eol=lf

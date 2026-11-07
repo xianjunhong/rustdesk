@@ -1,0 +1,17 @@
+{
+  "artifacts": [
+    {
+      "id": 13281884355,
+      "name": "topmostwindow-artifacts-x64",
+      "size_in_bytes": 32534,
+      "digest": "sha256:cc8da669ec28ecf6b1781e73391dcf93c03bb1f352321f16f40d7ac31d362ff7",
+      "workflow_run": {
+        "id": 41745328480,
+        "repository_id": 299354207,
+        "head_repository_id": 299354207,
+        "head_branch": "master",
+        "head_sha": "55786aaa5709ac0a450aabcf06f9d1fee3119908"
+      }
+    }
+  ]
+}

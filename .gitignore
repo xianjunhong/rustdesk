@@ -60,3 +60,45 @@ flutter/web/
 /third_party/libdrmtap/
 # Local git worktrees
 .worktrees/
+
+# DogShare source snapshot: keep the exact bridge and branding used by this branch.
+!/src/bridge_generated.rs
+!/src/bridge_generated.io.rs
+!/flutter/assets/icon.png
+
+# Local build tools, machine configuration, credentials and build products.
+/tomdesk-tools/cargo/
+/tomdesk-tools/rustup/
+/tomdesk-tools/flutter/
+/tomdesk-tools/pub-cache/
+/tomdesk-tools/vcpkg/
+/tomdesk-tools/vcpkg-binary-cache/
+/tomdesk-tools/llvm-*/
+/tomdesk-tools/cmake-*/
+/tomdesk-tools/downloads/
+/tomdesk-tools/bridge-assets/*.zip
+/tomdesk-tools/bridge-assets/*.part
+/tomdesk-tools/bridge-assets/*.parts/
+/tomdesk-tools/bridge-assets/custom-engine/
+/tomdesk-tools/bridge-assets/topmostwindow-artifacts-x64/
+/tomdesk-tools/native-environment.local.json
+/tomdesk-tools/account-secrets/
+/tomdesk-tools/local-admin-preview/
+/打包/输出/
+/打包/日志/
+/打包/Rust后端/
+/打包/备份/
+/打包/.dogshare-build.lock
+/libs/portable/data.bin
+/libs/portable/app_metadata.toml
+/dist/
+*.log
+*.sqlite3
+*.sqlite3-*
+*.db
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key

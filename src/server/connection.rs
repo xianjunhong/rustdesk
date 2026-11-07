@@ -372,6 +372,8 @@ pub struct Connection {
     port_forward_address: String,
     tx_to_cm: mpsc::UnboundedSender<ipc::Data>,
     authorized: bool,
+    #[cfg(windows)]
+    account_ticket_consumed: bool,
     // The place among the unauthorized connections; given back at authorization.
     unauthorized_id: Option<UnauthorizedID>,
     require_2fa: Option<totp_rs::TOTP>,
@@ -532,6 +534,9 @@ impl Connection {
         meta: super::ConnectionMeta,
         unauthorized: UnauthorizedID,
     ) {
+        if crate::tomdesk_role::is_controller() {
+            return;
+        }
         let super::ConnectionMeta {
             control_permissions,
             controlled_context,
@@ -590,6 +595,8 @@ impl Connection {
             port_forward_address: "".to_owned(),
             tx_to_cm,
             authorized: false,
+            #[cfg(windows)]
+            account_ticket_consumed: false,
             unauthorized_id: Some(unauthorized),
             keyboard: Self::permission(keys::OPTION_ENABLE_KEYBOARD, &control_permissions),
             clipboard: Self::permission(keys::OPTION_ENABLE_CLIPBOARD, &control_permissions),
@@ -712,6 +719,10 @@ impl Connection {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         std::thread::spawn(move || Self::handle_input(_rx_input, tx_cloned));
         let mut second_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
+        let mut account_timer = time::interval_at(
+            Instant::now() + crate::tomdesk_account::RECHECK_INTERVAL,
+            crate::tomdesk_account::RECHECK_INTERVAL,
+        );
 
         #[cfg(feature = "unix-file-copy-paste")]
         let rx_clip_holder;
@@ -753,6 +764,10 @@ impl Connection {
                 Some(data) = rx_from_cm.recv() => {
                     match data {
                         ipc::Data::Authorize => {
+                            if crate::tomdesk_role::is_receiver() {
+                                conn.send_login_error("DogShare B requires server-authorized account pairing.").await;
+                                continue;
+                            }
                             conn.set_conn_audit_primary_auth(ConnAuditPrimaryAuth::Click);
                             conn.trusted_device = None;
                             conn.require_2fa.take();
@@ -801,6 +816,8 @@ impl Connection {
                             conn.chat_unanswered = false;
                         }
                         ipc::Data::SwitchPermission{name, enabled} => {
+                            let enabled = enabled
+                                && !(crate::tomdesk_role::is_receiver() && name == "file");
                             log::info!("Change permission {} -> {}", name, enabled);
                             if &name == "keyboard" {
                                 conn.keyboard = enabled;
@@ -973,6 +990,9 @@ impl Connection {
                         #[cfg(feature = "flutter")]
                         #[cfg(not(any(target_os = "android", target_os = "ios")))]
                         ipc::Data::SwitchSidesBack => {
+                            if crate::tomdesk_role::is_split() {
+                                continue;
+                            }
                             let mut misc = Misc::new();
                             misc.set_switch_back(SwitchBack::default());
                             let mut msg = Message::new();
@@ -980,7 +1000,9 @@ impl Connection {
                             conn.send(msg).await;
                         }
                         ipc::Data::VoiceCallResponse(accepted) => {
-                            conn.handle_voice_call(accepted).await;
+                            if !crate::tomdesk_role::is_receiver() {
+                                conn.handle_voice_call(accepted).await;
+                            }
                         }
                         ipc::Data::CloseVoiceCall(_reason) => {
                             log::debug!("Close the voice call from the ipc.");
@@ -1169,6 +1191,13 @@ impl Connection {
                         _ => {}
                     }
                 }
+                _ = account_timer.tick(), if cfg!(windows) && conn.authorized => {
+                    if let Err(error) = crate::tomdesk_account::check_connection(&conn.lr).await {
+                        conn.send_close_reason_no_retry(&error.to_string()).await;
+                        conn.on_close("DogShare account authorization ended", true).await;
+                        break;
+                    }
+                }
                 _ = second_timer.tick() => {
                     #[cfg(windows)]
                     conn.portable_check();
@@ -1344,6 +1373,10 @@ impl Connection {
             log::info!("Running port forwarding loop");
             self.stream.set_raw();
             let mut hbbs_rx = crate::hbbs_http::sync::signal_receiver();
+            let mut account_timer = time::interval_at(
+                Instant::now() + crate::tomdesk_account::RECHECK_INTERVAL,
+                crate::tomdesk_account::RECHECK_INTERVAL,
+            );
             loop {
                 tokio::select! {
                     Some(data) = rx_from_cm.recv() => {
@@ -1381,6 +1414,9 @@ impl Connection {
                             bail!("Stream reset by the peer");
                         }
                     },
+                    _ = account_timer.tick(), if cfg!(windows) => {
+                        crate::tomdesk_account::check_connection(&self.lr).await?;
+                    }
                     _ = self.timer.tick() => {
                         if last_recv_time.elapsed() >= H1 {
                             bail!("Timeout");
@@ -1851,11 +1887,46 @@ impl Connection {
         }
     }
 
+    #[cfg(windows)]
+    fn forward_tomdesk_subtitle(&mut self, frame: TomDeskSubtitle) {
+        if crate::tomdesk_role::is_receiver()
+            && self.authorized
+            && self.account_ticket_consumed
+            && self.authed_conn_type() == Some(AuthConnType::Remote)
+        {
+            if let Some(frame) = crate::tomdesk_subtitle::to_ui_json(frame) {
+                self.send_to_cm(ipc::Data::TomDeskSubtitle { frame });
+            }
+        }
+    }
+
+    async fn check_account_ticket(&mut self) -> bool {
+        let result = if self.account_ticket_consumed {
+            crate::tomdesk_account::check_connection(&self.lr).await
+        } else {
+            crate::tomdesk_account::consume_ticket(&self.lr).await
+        };
+        match result {
+            Ok(()) => {
+                self.account_ticket_consumed = true;
+                true
+            }
+            Err(error) => {
+                self.send_login_error(error.to_string()).await;
+                false
+            }
+        }
+    }
+
     // Returns whether this connection should be kept alive.
     // `true` does not necessarily mean authorization succeeded (e.g. REQUIRE_2FA case).
     async fn send_logon_response_and_keep_alive(&mut self) -> bool {
         if self.authorized {
             return true;
+        }
+        if let Err(error) = crate::tomdesk_role::require_incoming(&self.lr) {
+            self.send_login_error(error.to_string()).await;
+            return false;
         }
         if self.require_2fa.is_some() && !self.is_recent_session(true) && !self.from_switch {
             self.require_2fa.as_ref().map(|totp| {
@@ -1893,6 +1964,10 @@ impl Connection {
         self.awaiting_2fa = false;
         // The later check also covers revocation while connection setup awaits.
         if !self.check_trusted_device().await {
+            return false;
+        }
+        #[cfg(windows)]
+        if !self.check_account_ticket().await {
             return false;
         }
         if let Some(keep_alive) = self.prepare_terminal_login_for_authorization().await {
@@ -2698,6 +2773,9 @@ impl Connection {
 
     #[inline]
     pub fn is_permission_enabled_locally(enable_prefix_option: &str) -> bool {
+        if crate::tomdesk_role::blocks_permission(enable_prefix_option) {
+            return false;
+        }
         #[cfg(feature = "flutter")]
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -2719,6 +2797,9 @@ impl Connection {
         control_permissions: &Option<ControlPermissions>,
     ) -> bool {
         use hbb_common::rendezvous_proto::control_permissions::Permission;
+        if crate::tomdesk_role::blocks_permission(enable_prefix_option) {
+            return false;
+        }
         if let Some(control_permissions) = control_permissions {
             let permission = match enable_prefix_option {
                 keys::OPTION_ENABLE_KEYBOARD => Some(Permission::keyboard),
@@ -2760,6 +2841,10 @@ impl Connection {
     }
 
     fn reset_session_scope_for_login(&mut self) {
+        #[cfg(windows)]
+        {
+            self.account_ticket_consumed = false;
+        }
         self.file_transfer = None;
         self.view_camera = false;
         self.terminal = false;
@@ -2909,6 +2994,15 @@ impl Connection {
         }
         // After handling CloseReason messages, proceed to process other message types
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
+            if let Err(error) = crate::tomdesk_role::require_incoming(&lr) {
+                self.send_login_error(error.to_string()).await;
+                return false;
+            }
+            #[cfg(windows)]
+            if let Err(error) = crate::tomdesk_account::validate_ticket(&lr.tomdesk_account_ticket) {
+                self.send_login_error(error.to_string()).await;
+                return false;
+            }
             if !self.check_login_scope(&lr).await {
                 return false;
             }
@@ -3018,6 +3112,21 @@ impl Connection {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if !should_use_terminal_os_login_scope(self.terminal, &lr.os_login.username) {
                 self.try_start_cm_ipc();
+            }
+
+            if crate::tomdesk_role::is_receiver() {
+                self.require_2fa = None;
+                self.awaiting_2fa = false;
+                self.trusted_device = None;
+                self.from_switch = false;
+                self.conn_audit_primary_auth = ConnAuditPrimaryAuth::None;
+                self.conn_audit_two_factor = ConnAuditTwoFactor::None;
+                // The final authorization path consumes the server's single-use pairing ticket.
+                if !self.send_logon_response_and_keep_alive().await {
+                    return false;
+                }
+                self.try_start_cm(lr.my_id, lr.my_name, self.authorized);
+                return true;
             }
 
             // https://github.com/rustdesk/rustdesk-server-pro/discussions/646
@@ -3150,6 +3259,10 @@ impl Connection {
                 }
             }
         } else if let Some(message::Union::SwitchSidesResponse(_s)) = msg.union {
+            if crate::tomdesk_role::is_split() {
+                self.send_login_error("Switching sides is unavailable in DogShare A/B.").await;
+                return false;
+            }
             #[cfg(feature = "flutter")]
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if let Some(lr) = _s.lr.clone().take() {
@@ -3922,6 +4035,9 @@ impl Connection {
                             self.toggle_privacy_mode(t).await;
                         }
                     }
+                    Some(misc::Union::TomdeskSubtitle(frame)) => {
+                        self.forward_tomdesk_subtitle(frame);
+                    }
                     Some(misc::Union::ChatMessage(c)) => {
                         self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
                         self.chat_unanswered = true;
@@ -3999,6 +4115,10 @@ impl Connection {
                     #[cfg(feature = "flutter")]
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     Some(misc::Union::SwitchSidesRequest(s)) => {
+                        if crate::tomdesk_role::is_split() {
+                            log::trace!("Ignored switch-sides request in a fixed-role DogShare edition");
+                            return true;
+                        }
                         if let Ok(uuid) = uuid::Uuid::from_slice(&s.uuid.to_vec()[..]) {
                             if crate::server::insert_pending_switch_sides_uuid(
                                 self.lr.my_id.clone(),
@@ -4104,7 +4224,11 @@ impl Connection {
                             NonZeroI64::new(request.req_timestamp)
                                 .unwrap_or(NonZeroI64::new(get_time()).unwrap()),
                         );
-                        // Notify the connection manager.
+                        #[cfg(windows)]
+                        if crate::tomdesk_role::is_receiver() {
+                            self.answer_paired_voice_call().await;
+                            return true;
+                        }
                         self.send_to_cm(Data::VoiceCallIncoming);
                     } else {
                         self.close_voice_call().await;
@@ -4242,6 +4366,10 @@ impl Connection {
     async fn prepare_terminal_login_for_authorization(&mut self) -> Option<bool> {
         if !self.terminal || self.terminal_user_token.is_some() {
             return None;
+        }
+        #[cfg(windows)]
+        if !self.account_ticket_consumed && !self.check_account_ticket().await {
+            return Some(false);
         }
 
         #[derive(Copy, Clone)]
@@ -4884,13 +5012,47 @@ impl Connection {
         }
     }
 
+    #[cfg(windows)]
+    async fn answer_paired_voice_call(&mut self) {
+        if self.voice_calling {
+            // Do not restart capture or recheck the grant for duplicate requests.
+            self.voice_call_request_timestamp = None;
+            return;
+        }
+        let microphone = if self.authorized
+            && self.account_ticket_consumed
+            && self.authed_conn_type() == Some(AuthConnType::Remote)
+            && self.audio_enabled()
+            && matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(4),
+                    crate::tomdesk_account::check_voice_connection(&self.lr),
+                )
+                .await,
+                Ok(Ok(()))
+            )
+            && crate::audio_service::get_voice_call_input_device().is_none()
+        {
+            // Never use system loopback for an automatically answered call.
+            crate::get_default_sound_input().filter(|name| !name.is_empty())
+        } else {
+            None
+        };
+        self.finish_voice_call(microphone.is_some(), microphone).await;
+    }
+
     pub async fn handle_voice_call(&mut self, accepted: bool) {
+        self.finish_voice_call(accepted, None).await;
+    }
+
+    async fn finish_voice_call(&mut self, accepted: bool, microphone: Option<String>) {
         if let Some(ts) = self.voice_call_request_timestamp.take() {
             let msg = new_voice_call_response(ts.get(), accepted);
             if accepted {
+                let automatic = microphone.is_some();
                 crate::audio_service::set_voice_call_input_device(
-                    crate::get_default_sound_input(),
-                    false,
+                    microphone.or_else(crate::get_default_sound_input),
+                    automatic,
                 );
                 self.send_to_cm(Data::StartVoiceCall);
             } else {

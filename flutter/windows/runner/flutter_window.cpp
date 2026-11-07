@@ -12,12 +12,15 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 
+#include <shobjidl_core.h>
 #include <windows.h>
 
 #include <optional>
 #include <memory>
 
 #include "win32_desktop.h"
+#include "text_overlay_plugin.h"
+#include "receiver_window_relaunch.h"
 
 namespace {
 
@@ -80,6 +83,26 @@ void ForceChildRefresh(HWND child) {
                SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_FRAMECHANGED);
 }
 
+bool ShowConnectionInTaskbar(HWND window) {
+  if (!IsWindow(window)) return false;
+  ITaskbarList* taskbar = nullptr;
+  if (FAILED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&taskbar))) ||
+      !taskbar) {
+    return false;
+  }
+const bool added = SUCCEEDED(taskbar->HrInit());
+  taskbar->Release();
+  return added;
+}
+
+bool ShowConnectionMinimized(HWND window) {
+  if (!ShowConnectionInTaskbar(window)) return false;
+  ShowWindow(window, SW_SHOWMINNOACTIVE);
+  // ShowWindow reports the previous visibility, not whether this call worked.
+  return IsWindowVisible(window) && IsIconic(window);
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -103,11 +126,34 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  TextOverlayPlugin::RegisterWithRegistrar(
+      flutter::PluginRegistrarManager::GetInstance()
+          ->GetRegistrar<flutter::PluginRegistrarWindows>(
+              flutter_controller_->engine()->GetRegistrarForPlugin("TextOverlayPlugin")));
 
   flutter::MethodChannel<> channel(
     flutter_controller_->engine()->messenger(),
     "org.rustdesk.rustdesk/host",
     &flutter::StandardMethodCodec::GetInstance());
+
+  flutter::MethodChannel<> receiver_window_channel(
+      flutter_controller_->engine()->messenger(), "tomdesk/receiver_window",
+      &flutter::StandardMethodCodec::GetInstance());
+  receiver_window_channel.SetMethodCallHandler(
+      [this](const auto& call, auto result) {
+        if (call.method_name() == "enableRelaunch") {
+          result->Success(
+              flutter::EncodableValue(receiver_window::EnableRelaunch(GetHandle())));
+        } else if (call.method_name() == "showConnectionInTaskbar") {
+          result->Success(
+              flutter::EncodableValue(ShowConnectionInTaskbar(GetHandle())));
+        } else if (call.method_name() == "showConnectionMinimized") {
+          result->Success(
+              flutter::EncodableValue(ShowConnectionMinimized(GetHandle())));
+        } else {
+          result->NotImplemented();
+        }
+      });
 
   channel.SetMethodCallHandler(
     [](const flutter::MethodCall<>& call, std::unique_ptr<flutter::MethodResult<>> result) {
@@ -149,6 +195,10 @@ bool FlutterWindow::OnCreate() {
     auto *flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController *>(controller);
     auto *registry = flutter_view_controller->engine();
+    TextOverlayPlugin::RegisterWithRegistrar(
+        flutter::PluginRegistrarManager::GetInstance()
+            ->GetRegistrar<flutter::PluginRegistrarWindows>(
+                registry->GetRegistrarForPlugin("TextOverlayPlugin")));
     TextureRgbaRendererPluginCApiRegisterWithRegistrar(
         registry->GetRegistrarForPlugin("TextureRgbaRendererPlugin"));
     FlutterGpuTextureRendererPluginCApiRegisterWithRegistrar(
@@ -177,6 +227,7 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == WM_DESTROY) receiver_window::DisableRelaunch(hwnd);
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

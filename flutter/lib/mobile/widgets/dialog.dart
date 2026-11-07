@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 
 import '../../common.dart';
 import '../../models/platform_model.dart';
+import '../../models/tomdesk_account_gate.dart';
 
 void _showSuccess() {
   showToast(translate("Successful"));
@@ -164,7 +165,7 @@ void showServerSettingsWithValue(
                         relayServerMsg.value),
                     SizedBox(height: 8),
                   ],
-                  buildField(
+                  if (!TomDeskAccountGate.isRequired) buildField(
                     translate('API Server'),
                     apiCtrl,
                     apiServerMsg.value,
@@ -178,7 +179,7 @@ void showServerSettingsWithValue(
                       return null;
                     },
                   ),
-                  Padding(
+                  if (!TomDeskAccountGate.isRequired) Padding(
                     padding: EdgeInsetsDirectional.only(
                       start: isDesktop || isWeb ? labelWidth + labelSpacing : 0,
                     ),

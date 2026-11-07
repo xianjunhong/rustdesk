@@ -789,6 +789,9 @@ async fn test_nat_type_() -> ResultType<bool> {
 }
 
 pub async fn get_rendezvous_server(ms_timeout: u64) -> (String, Vec<String>, bool) {
+    if crate::tomdesk_role::is_split() {
+        return (crate::tomdesk_role::ID_SERVER.to_owned(), Vec::new(), true);
+    }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let (mut a, mut b) = get_rendezvous_server_(ms_timeout);
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1213,6 +1216,17 @@ pub fn get_app_name() -> String {
     hbb_common::config::APP_NAME.read().unwrap().clone()
 }
 
+/// User-facing brand. Keep get_app_name() for existing configuration and IPC.
+#[inline]
+pub fn get_display_app_name() -> String {
+    let name = get_app_name();
+    if name == "TomDesk" {
+        "DogShare".to_owned()
+    } else {
+        name
+    }
+}
+
 #[inline]
 pub fn is_rustdesk() -> bool {
     hbb_common::config::APP_NAME.read().unwrap().eq("RustDesk")
@@ -1237,6 +1251,9 @@ pub fn is_setup(name: &str) -> bool {
 }
 
 pub fn get_custom_rendezvous_server(custom: String) -> String {
+    if crate::tomdesk_role::is_split() {
+        return crate::tomdesk_role::ID_SERVER.to_owned();
+    }
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
         if !lic.host.is_empty() {
@@ -1339,6 +1356,10 @@ pub fn get_webrtc_enabled() -> bool {
 }
 
 pub fn get_local_option(key: &str) -> String {
+    #[cfg(windows)]
+    if key == "access_token" {
+        return crate::tomdesk_credentials::read_access_token();
+    }
     let v = LocalConfig::get_option(key);
     if key == keys::OPTION_ENABLE_UDP_PUNCH
         || key == keys::OPTION_ENABLE_IPV6_PUNCH
@@ -2142,6 +2163,9 @@ pub fn decode64<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, base64::DecodeError
 }
 
 pub async fn get_key(sync: bool) -> String {
+    if crate::tomdesk_role::is_split() {
+        return crate::tomdesk_role::SERVER_KEY.to_owned();
+    }
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
         if !lic.key.is_empty() {
@@ -2493,6 +2517,10 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 }
 
 pub fn load_custom_client() {
+    #[cfg(target_os = "windows")]
+    {
+        *config::APP_NAME.write().unwrap() = "TomDesk".to_owned();
+    }
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());

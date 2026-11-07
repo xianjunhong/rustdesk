@@ -16,6 +16,7 @@ import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/mobile/widgets/dialog.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
+import '../../models/tomdesk_account_gate.dart';
 import 'package:flutter_hbb/models/printer_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/shortcut_model.dart';
@@ -2285,7 +2286,16 @@ class _AccountState extends State<_Account> {
     return ListView(
       controller: scrollController,
       children: [
-        _Card(title: 'Account', children: [accountAction(), useInfo()]),
+        _Card(title: 'Account', children: [
+          accountAction(), useInfo(),
+          if (TomDeskAccountGate.isRequired)
+            Obx(() => gFFI.userModel.networkError.value.isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(translate(gFFI.userModel.networkError.value)),
+                  )),
+        ]),
       ],
     ).marginOnly(bottom: _kListViewBottomMargin);
   }

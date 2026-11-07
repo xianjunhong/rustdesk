@@ -8,6 +8,7 @@ use crate::{
         QualityStatus, MILLI1, SEC30,
     },
     common::get_default_sound_input,
+    tomdesk_account::PairActivation,
     ui_session_interface::{InvokeUiSession, Session},
 };
 
@@ -104,6 +105,7 @@ pub struct Remote<T: InvokeUiSession> {
     sent_close_reason: bool,
     cursor_dedupe: CursorDedupe,
     trusted_device: crate::trusted_devices::client::Session,
+    pair_activation: Option<PairActivation>,
 }
 
 #[derive(Default)]
@@ -158,6 +160,7 @@ impl<T: InvokeUiSession> Remote<T> {
             sent_close_reason: false,
             cursor_dedupe: Default::default(),
             trusted_device: Default::default(),
+            pair_activation: None,
         }
     }
 
@@ -329,6 +332,13 @@ impl<T: InvokeUiSession> Remote<T> {
                                 }
                             }
                         }
+                        activation = PairActivation::wait(&mut self.pair_activation), if self.pair_activation.is_some() => {
+                            self.pair_activation = None;
+                            if let Err(error) = activation {
+                                self.handler.on_error(&error.to_string());
+                                break;
+                            }
+                        }
                         _msg = rx_clip_client.recv() => {
                             #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste"))]
                             self.handle_local_clipboard_msg(&mut peer, _msg).await;
@@ -425,6 +435,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         }
                     }
                 }
+                self.pair_activation = None;
                 log::debug!("Exit io_loop of id={}", self.handler.get_id());
                 // Stop client audio server.
                 if let Some(s) = self.stop_voice_call_sender.take() {
@@ -828,6 +839,9 @@ impl<T: InvokeUiSession> Remote<T> {
                         self.initial_clipboard_pending = false;
                     }
                     Some(message::Union::Misc(misc)) => match misc.union {
+                        Some(misc::Union::TomdeskSubtitle(_)) if !self.is_connected => {
+                            return true;
+                        }
                         Some(misc::Union::Option(ref option)) => {
                             if option.custom_fps > 0 {
                                 self.last_auto_fps = None;
@@ -1697,6 +1711,10 @@ impl<T: InvokeUiSession> Remote<T> {
         if let Ok(msg_in) = Message::parse_from_bytes(&data) {
             match msg_in.union {
                 Some(message::Union::VideoFrame(vf)) => {
+                    // A frame used for activation must come after the accepted login.
+                    if crate::tomdesk_role::is_controller() && !self.is_connected {
+                        return true;
+                    }
                     if !self.first_frame {
                         self.first_frame = true;
                         self.handler.close_success();
@@ -1749,11 +1767,19 @@ impl<T: InvokeUiSession> Remote<T> {
                     .union
                 {
                     Some(login_response::Union::Error(err)) => {
+                        #[cfg(windows)]
+                        if err != client::REQUIRE_2FA && err != client::LOGIN_MSG_2FA_WRONG {
+                            self.trusted_device.pair_activation = None;
+                        }
                         if !self.handler.handle_login_error(&err) {
                             return false;
                         }
                     }
                     Some(login_response::Union::PeerInfo(pi)) => {
+                        #[cfg(windows)]
+                        if !self.is_connected {
+                            self.pair_activation = self.trusted_device.pair_activation.take().map(PairActivation::new);
+                        }
                         let peer_version = pi.version.clone();
                         let peer_platform = pi.platform.clone();
                         self.set_peer_info(&pi);
@@ -2458,7 +2484,7 @@ impl<T: InvokeUiSession> Remote<T> {
                             .write()
                             .unwrap()
                             .consume_switch_back_permission();
-                        if allow_switch_back {
+                        if allow_switch_back && !crate::tomdesk_role::is_split() {
                             self.handler.switch_back(&self.handler.get_id());
                         } else {
                             log::warn!(
@@ -2901,6 +2927,7 @@ impl<T: InvokeUiSession> Remote<T> {
             discard_queue: discard_queue.clone(),
         };
         let handler = self.handler.ui_handler.clone();
+        let mut first_decoded = self.pair_activation.as_ref().map(|activation| activation.first_frame.clone());
         crate::client::start_video_thread(
             self.handler.clone(),
             display,
@@ -2919,6 +2946,12 @@ impl<T: InvokeUiSession> Remote<T> {
                 } else {
                     #[cfg(all(feature = "vram", feature = "flutter"))]
                     handler.on_texture(display, _texture);
+                    #[cfg(not(all(feature = "vram", feature = "flutter")))]
+                    return;
+                }
+                // Only the decoder's successful output callback reaches here.
+                if let Some(frame) = first_decoded.take() {
+                    frame.signal();
                 }
             },
         );

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+data/
+*.sqlite3
+*.sqlite3-*
+# Administrator credential exports must never be committed.
+*.csv

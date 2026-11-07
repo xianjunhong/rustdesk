@@ -255,6 +255,14 @@ pub fn get_builtin_option(key: &str) -> String {
 
 #[inline]
 pub fn set_local_option(key: String, value: String) {
+    #[cfg(windows)]
+    if key == "access_token" {
+        crate::tomdesk_account::invalidate();
+        if let Err(error) = crate::tomdesk_credentials::write_access_token(&value) {
+            hbb_common::log::error!("Unable to store account credential: {}", error);
+        }
+        return;
+    }
     LocalConfig::set_option(key.clone(), value);
 }
 
@@ -475,7 +483,8 @@ pub fn set_option(key: String, value: String) {
         }
         #[cfg(any(target_os = "windows", target_os = "linux"))]
         {
-            if crate::platform::is_installed() {
+            // An older installed TomDesk can coexist with the user-session-only A/B builds.
+            if !crate::tomdesk_role::is_split() && crate::platform::is_installed() {
                 if value == "Y" {
                     if crate::platform::uninstall_service(true, false) {
                         return;

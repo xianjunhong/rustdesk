@@ -43,6 +43,10 @@ pub mod flutter;
 pub mod flutter_ffi;
 use common::*;
 mod auth_2fa;
+mod tomdesk_account;
+mod tomdesk_credentials;
+mod tomdesk_role;
+mod tomdesk_subtitle;
 mod trusted_devices;
 #[cfg(not(target_os = "ios"))]
 mod clipboard;

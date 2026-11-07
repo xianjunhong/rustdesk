@@ -1,0 +1,13 @@
+{
+  "reference_only": true,
+  "description": "Known source-machine build versions. This file does not certify the current build host.",
+  "visualStudioDisplayVersion": "17.14.44",
+  "compiler": "19.44.35229",
+  "toolsetDirectory": "14.44.35207",
+  "windowsSdk": "10.0.22621.0",
+  "cmakeVersion": "4.3.0",
+  "llvmVersion": "15.0.6",
+  "rustVersion": "1.75.0",
+  "flutterVersion": "3.24.5",
+  "dartVersion": "3.5.4"
+}

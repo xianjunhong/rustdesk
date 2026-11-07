@@ -18,6 +18,8 @@ import '../mobile/pages/server_page.dart';
 import '../mobile/widgets/android_file_transfer_setup.dart';
 import '../utils/android_documents.dart';
 import 'model.dart';
+import 'tomdesk_receiver_window.dart';
+import 'tomdesk_role.dart';
 
 const kLoginDialogTag = "LOGIN";
 
@@ -585,15 +587,16 @@ class ServerModel with ChangeNotifier {
         closable: false,
         onTap: () {},
         page: desktop.buildConnectionCard(client)));
-    Future.delayed(Duration.zero, () async {
-      if (!hideCm) windowOnTop(null);
-    });
-    // Only do the hidden task when on Desktop.
-    if (client.authorized && isDesktop) {
-      cmHiddenTimer = Timer(const Duration(seconds: 3), () {
-        if (!hideCm) windowManager.minimize();
-        cmHiddenTimer = null;
+    if (!isTomDeskReceiverConnectionManager) {
+      Future.delayed(Duration.zero, () async {
+        if (!hideCm) windowOnTop(null);
       });
+      if (client.authorized && isDesktop) {
+        cmHiddenTimer = Timer(const Duration(seconds: 3), () {
+          if (!hideCm) windowManager.minimize();
+          cmHiddenTimer = null;
+        });
+      }
     }
     parent.target?.chatModel
         .updateConnIdOfKey(MessageKey(client.peerId, client.id));
@@ -707,6 +710,7 @@ class ServerModel with ChangeNotifier {
     try {
       final id = int.parse(evt['id'] as String);
       final close = (evt['close'] as String) == 'true';
+      parent.target?.chatModel.closeTextOverlay(id);
       if (_clients.any((c) => c.id == id)) {
         final index = _clients.indexWhere((client) => client.id == id);
         if (index >= 0) {
@@ -734,6 +738,7 @@ class ServerModel with ChangeNotifier {
   /// peers to go. The sessions end either way; only the close reason differs, and with it
   /// whether the peer is allowed to reconnect. See `ipc::Data::CmWindowClosed`.
   Future<void> closeAll({bool byOperator = true}) async {
+    parent.target?.chatModel.closeTextOverlay();
     await Future.wait(_clients.map((client) => byOperator
         ? bind.cmCloseConnection(connId: client.id)
         : bind.cmCloseConnectionWindow(connId: client.id)));
@@ -761,14 +766,14 @@ class ServerModel with ChangeNotifier {
       if (index != -1) {
         _clients[index].inVoiceCall = client.inVoiceCall;
         _clients[index].incomingVoiceCall = client.incomingVoiceCall;
-        if (client.incomingVoiceCall) {
+        if (client.incomingVoiceCall && !isTomDeskReceiver) {
           if (isAndroid) {
             showVoiceCallDialog(client);
-          } else {
-            // Has incoming phone call, let's set the window on top.
-            Future.delayed(Duration.zero, () {
-              windowOnTop(null);
-            });
+          } else if (isDesktop) {
+            cmHiddenTimer?.cancel();
+            cmHiddenTimer = null;
+            tabController.jumpTo(index);
+            Future.delayed(Duration.zero, () => windowOnTop(null));
           }
         }
         notifyListeners();

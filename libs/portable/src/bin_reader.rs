@@ -201,6 +201,7 @@ fn read_resource(name: &str) -> Option<&'static [u8]> {
 }
 
 impl BinaryData {
+    #[cfg(not(windows))]
     fn decompress(&self) -> Vec<u8> {
         let cursor = Cursor::new(self.raw);
         let mut decoder = brotli::Decompressor::new(cursor, BUF_SIZE);
@@ -209,6 +210,7 @@ impl BinaryData {
         buf
     }
 
+    #[cfg(not(windows))]
     pub fn write_to_file(&self, prefix: &Path) {
         let p = prefix.join(&self.path);
         if let Some(parent) = p.parent() {
@@ -231,6 +233,34 @@ impl BinaryData {
             }
         }
         let _ = fs::write(p, self.decompress());
+    }
+
+    #[cfg(windows)]
+    fn matches_bytes(&self, bytes: &[u8]) -> bool {
+        format!("{:x}", md5::compute(bytes)).as_bytes() == self.md5_code
+    }
+
+    #[cfg(windows)]
+    pub fn cached_file_matches(&self, prefix: &Path) -> bool {
+        fs::read(prefix.join(&self.path)).is_ok_and(|bytes| self.matches_bytes(&bytes))
+    }
+
+    #[cfg(windows)]
+    pub fn extract_to(&self, prefix: &Path) -> std::io::Result<()> {
+        let mut decoder = brotli::Decompressor::new(Cursor::new(self.raw), BUF_SIZE);
+        let mut bytes = Vec::new();
+        decoder.read_to_end(&mut bytes)?;
+        if !self.matches_bytes(&bytes) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Package file checksum mismatch",
+            ));
+        }
+        let path = prefix.join(&self.path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, bytes)
     }
 }
 

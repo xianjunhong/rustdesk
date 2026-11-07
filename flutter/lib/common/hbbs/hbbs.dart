@@ -6,6 +6,21 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 
 import '../../models/platform_model.dart';
+import '../../models/tomdesk_account_gate.dart';
+import '../../models/tomdesk_role.dart';
+
+Future<String> accountApiServer() async {
+  final server = await bind.mainGetApiServer();
+  if (TomDeskAccountGate.isRequired) {
+    final expected = tomDeskClientRole == null
+        ? tomDeskAccountServer
+        : 'https://phenoseed.com/tomdesk-paired-account';
+    if (server != expected) {
+      throw RequestException(0, tomDeskAccountUnavailable);
+    }
+  }
+  return server;
+}
 
 class HttpType {
   static const kAuthReqTypeAccount = "account";
@@ -30,6 +45,7 @@ class UserPayload {
   String email = '';
   String note = '';
   String? verifier;
+  String? role;
   UserStatus status;
   bool isAdmin = false;
 
@@ -40,6 +56,7 @@ class UserPayload {
         email = json['email'] ?? '',
         note = json['note'] ?? '',
         verifier = json['verifier'],
+        role = json['role'] as String?,
         status = json['status'] == 0
             ? UserStatus.kDisabled
             : json['status'] == -1
@@ -52,6 +69,7 @@ class UserPayload {
       'name': name,
       'display_name': displayName,
       'avatar': avatar,
+      if (role != null) 'role': role,
       'status': status == UserStatus.kDisabled
           ? 0
           : status == UserStatus.kUnverified
@@ -160,6 +178,8 @@ class LoginRequest {
     if (uuid != null) data['uuid'] = uuid;
     if (autoLogin != null) data['autoLogin'] = autoLogin;
     if (type != null) data['type'] = type;
+    final clientRole = tomDeskClientRole;
+    if (clientRole != null) data['client_role'] = clientRole;
     if (verificationCode != null) {
       data['verificationCode'] = verificationCode;
     }
