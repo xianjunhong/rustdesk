@@ -21,7 +21,6 @@ import '../../common.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../models/dogshare_role.dart';
-import '../../models/dogshare_subtitle_frame.dart';
 import '../../common/shared_state.dart';
 import './popup_menu.dart';
 import './dogshare_toolbar_style.dart';
@@ -639,7 +638,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       _subtitleReadyWorker = ever(ffiModel.waitForFirstImage, (bool waiting) {
         final draft = widget.ffi.chatModel.subtitleDraft;
         if (!waiting && pi.isSet.isTrue && draft.enabled) {
-          sendDogShareSubtitleFrame(widget.ffi.sessionId, draft.frame);
+          draft.resend();
         }
       });
     }

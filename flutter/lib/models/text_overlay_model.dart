@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../native/dogshare_subtitle_stub.dart'
+    if (dart.library.io) '../native/dogshare_subtitle.dart' as native_subtitle;
 import 'dogshare_account_gate.dart';
 import 'dogshare_subtitle_frame.dart';
 
@@ -15,6 +17,8 @@ class TextOverlayModel extends ChangeNotifier {
   String _text = '';
   String _label = '';
   bool _remoteControlled = false;
+  DogShareSubtitleFrame? _remoteFrame;
+  int? _remoteConnId;
   String? error;
   double fontSize = 32;
   int color = 0xffffd54f;
@@ -29,15 +33,41 @@ class TextOverlayModel extends ChangeNotifier {
       : _account = account ?? DogShareAccountGate.instance {
     _account.addListener(_accountChanged);
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'closed' &&
-          call.arguments is Map &&
-          call.arguments['source'] == _source) {
+      final args = call.arguments;
+      if (args is! Map || args['source'] != _source) return;
+      if (call.method == 'closed') {
         _source = null;
         _text = '';
         _remoteControlled = false;
+        _remoteFrame = null;
+        _remoteConnId = null;
         notifyListeners();
+      } else if (call.method == 'pageStatus') {
+        _sendPageStatus(args);
       }
     });
+  }
+
+  void _sendPageStatus(Map args) {
+    final connId = _remoteConnId;
+    final frame = _remoteFrame;
+    final page = args['page'];
+    final count = args['count'];
+    if (!_remoteControlled ||
+        connId == null ||
+        frame == null ||
+        frame.revision == 0 ||
+        args['revision'] != frame.revision ||
+        page is! int ||
+        count is! int ||
+        page < 0 ||
+        page >= count ||
+        count > DogShareSubtitleFrame.maxTextUnits) return;
+    try {
+      native_subtitle.sendPage(connId, frame.revision, page, count);
+    } on ArgumentError {
+      debugPrint('DogShare subtitle page feedback is unavailable.');
+    }
   }
 
   void _accountChanged() {
@@ -71,6 +101,8 @@ class TextOverlayModel extends ChangeNotifier {
     }
     _source = source;
     _remoteControlled = false;
+    _remoteFrame = null;
+    _remoteConnId = null;
     _label = label;
     _text = _boundedText(placeholder);
     error = null;
@@ -92,6 +124,7 @@ class TextOverlayModel extends ChangeNotifier {
   Future<void> receiveRemoteSubtitle({
     required String source,
     required DogShareSubtitleFrame frame,
+    int? connId,
   }) async {
     if (source.isEmpty) return;
     if (!frame.enabled || frame.text.trim().isEmpty || frame.color >> 24 == 0) {
@@ -100,6 +133,8 @@ class TextOverlayModel extends ChangeNotifier {
     }
     _source = source;
     _remoteControlled = true;
+    _remoteFrame = frame;
+    _remoteConnId = connId;
     _text = _boundedText(frame.text);
     _label = 'Live subtitles';
     fontSize = frame.fontSize;
@@ -107,7 +142,9 @@ class TextOverlayModel extends ChangeNotifier {
     fontFamily = frame.fontFamily;
     error = null;
     if (!_account.authorized) await _account.refresh();
-    if (_source == source && _remoteControlled) await _show();
+    if (_source == source && _remoteControlled && _remoteFrame == frame) {
+      await _show();
+    }
   }
 
   Future<void> disable(String source) async {
@@ -115,6 +152,8 @@ class TextOverlayModel extends ChangeNotifier {
     _source = null;
     _text = '';
     _remoteControlled = false;
+    _remoteFrame = null;
+    _remoteConnId = null;
     notifyListeners();
     try {
       await _channel.invokeMethod<void>('hide', {'source': source});
@@ -158,6 +197,7 @@ class TextOverlayModel extends ChangeNotifier {
 
   Future<void> _show() async {
     final source = _source;
+    final frame = _remoteControlled ? _remoteFrame : null;
     if (source == null) return;
     if (!_account.overlayAllowed) {
       error = dogShareSignInRequired;
@@ -173,14 +213,23 @@ class TextOverlayModel extends ChangeNotifier {
         'color': color,
         'fontFamily': fontFamily,
         'opacity': opacity,
-        'width': width,
-        'height': height,
-        if (_remoteControlled) 'pairedCard': true,
+        'width': frame == null || frame.width == 0 ? width : frame.width,
+        'height': frame == null || frame.height == 0 ? height : frame.height,
+        if (frame != null) ...{
+          'pairedCard': true,
+          'autoFit': frame.width == 0,
+          'page': frame.page,
+          'revision': frame.revision,
+        },
       });
     } on PlatformException {
-      _failed(source, 'Text overlay failed. Turn it on again to retry.');
+      if (frame == _remoteFrame) {
+        _failed(source, 'Text overlay failed. Turn it on again to retry.');
+      }
     } on MissingPluginException {
-      _failed(source, 'Text overlay is unavailable. Rebuild the Windows app.');
+      if (frame == _remoteFrame) {
+        _failed(source, 'Text overlay is unavailable. Rebuild the Windows app.');
+      }
     }
   }
 
@@ -189,6 +238,8 @@ class TextOverlayModel extends ChangeNotifier {
     _source = null;
     _text = '';
     _remoteControlled = false;
+    _remoteFrame = null;
+    _remoteConnId = null;
     error = message;
     notifyListeners();
   }

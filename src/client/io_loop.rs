@@ -2298,6 +2298,15 @@ impl<T: InvokeUiSession> Remote<T> {
                     Some(misc::Union::ChatMessage(c)) => {
                         self.handler.new_message(c.text);
                     }
+                    #[cfg(windows)]
+                    Some(misc::Union::DogshareSubtitlePage(status)) => {
+                        if crate::dogshare_role::is_controller()
+                            && self.handler.is_default()
+                            && crate::dogshare_subtitle::valid_page_status(status.revision, status.page, status.count)
+                        {
+                            self.handler.dogshare_subtitle_page(status.revision, status.page, status.count);
+                        }
+                    }
                     Some(misc::Union::PermissionInfo(p)) => {
                         log::info!("Change permission {:?} -> {}", p.permission, p.enabled);
                         // https://github.com/rustdesk/rustdesk/issues/3703#issuecomment-1474734754

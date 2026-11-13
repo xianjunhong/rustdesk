@@ -368,6 +368,18 @@ class FfiModel with ChangeNotifier {
             .receive(int.parse(evt['id'] as String), evt['text'] ?? '');
       } else if (name == 'dogshare_subtitle') {
         parent.target?.chatModel.receiveRemoteSubtitle(evt);
+      } else if (name == 'dogshare_subtitle_page') {
+        final revision = int.tryParse(evt['revision']?.toString() ?? '');
+        final page = int.tryParse(evt['page']?.toString() ?? '');
+        final count = int.tryParse(evt['count']?.toString() ?? '');
+        final chat = parent.target?.chatModel;
+        if (chat != null &&
+            chat.supportsOutgoingSubtitles &&
+            revision != null &&
+            page != null &&
+            count != null) {
+          chat.subtitleDraft.receivePageStatus(revision, page, count);
+        }
       } else if (name == 'terminal_response') {
         parent.target?.routeTerminalResponse(evt);
       } else if (name == 'file_dir') {

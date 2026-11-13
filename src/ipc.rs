@@ -364,6 +364,11 @@ pub enum Data {
     DogShareSubtitle {
         frame: String,
     },
+    DogShareSubtitlePage {
+        revision: u32,
+        page: u32,
+        count: u32,
+    },
     SwitchPermission {
         name: String,
         enabled: bool,

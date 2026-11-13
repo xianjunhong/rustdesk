@@ -158,6 +158,27 @@ void TextOverlayPlugin::HandleMethod(
   const auto* card_value = Find(*args, "pairedCard");
   const auto* card = card_value ? std::get_if<bool>(card_value) : nullptr;
   const bool paired_card = card && *card;
+  bool auto_fit = true;
+  double page = 0, revision = 0;
+  if (paired_card) {
+    if (const auto* value = Find(*args, "autoFit")) {
+      if (auto flag = std::get_if<bool>(value)) {
+        auto_fit = *flag;
+      } else {
+        result->Error("invalid_arguments", "Invalid subtitle sizing mode.");
+        return;
+      }
+    }
+    if ((Find(*args, "page") &&
+         (!ReadNumber(*args, "page", &page) || page < 0 || page >= 2000 ||
+          page != std::floor(page))) ||
+        (Find(*args, "revision") &&
+         (!ReadNumber(*args, "revision", &revision) || revision < 0 ||
+          revision > INT32_MAX || revision != std::floor(revision)))) {
+      result->Error("invalid_arguments", "Invalid subtitle page.");
+      return;
+    }
+  }
   const int min_font_size = paired_card ? 8 : 16;
   const int max_font_size = paired_card ? 96 : 72;
   if (!ReadString(*args, "text", &text) || !ToWide(text, 16000, &wide_text) ||
@@ -180,6 +201,11 @@ void TextOverlayPlugin::HandleMethod(
     result->Error("window_failed", "Unable to create the subtitle window.");
     return;
   }
+  const bool same_paired_layout = paired_card_ && IsWindowVisible(window_) &&
+      source_ == source && text_ == wide_text && font_family_ == wide_family &&
+      font_size_ == size && auto_fit_ == auto_fit &&
+      requested_width_ == static_cast<int>(std::lround(width)) &&
+      requested_height_ == static_cast<int>(std::lround(height));
   font_size_ = size;
   font_family_ = std::move(wide_family);
   color_ = RGB((color >> 16) & 255, (color >> 8) & 255, color & 255);
@@ -187,7 +213,7 @@ void TextOverlayPlugin::HandleMethod(
                    ? RGB(3, 2, 1) : kTransparentBackground;
   const auto alpha = paired_card_ ? static_cast<BYTE>((color >> 24) & 255)
                                   : static_cast<BYTE>(std::lround(opacity * 255));
-  if (!UpdateFont() || !SetLayeredWindowAttributes(
+  if ((!paired_card_ && !UpdateFont()) || !SetLayeredWindowAttributes(
           window_, color_key_, alpha, LWA_ALPHA | LWA_COLORKEY)) {
     Hide();
     result->Error("style_failed", "Unable to apply the subtitle style.");
@@ -225,17 +251,33 @@ void TextOverlayPlugin::HandleMethod(
     result->Error("window_failed", "Unable to monitor subtitle dragging.");
     return;
   }
-  const int dpi = static_cast<int>(WindowDpi(window_));
-  if (!SetWindowPos(window_, HWND_TOPMOST, 0, 0,
-          MulDiv(static_cast<int>(std::lround(width)), dpi, 96),
-          MulDiv(static_cast<int>(std::lround(height)), dpi, 96),
-          SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW) ||
-      (paired_card_ && !SyncDragSurface())) {
+  if (paired_card_) {
+    auto_fit_ = auto_fit;
+    requested_width_ = static_cast<int>(std::lround(width));
+    requested_height_ = static_cast<int>(std::lround(height));
+    paired_page_ = static_cast<int>(page);
+    paired_revision_ = static_cast<int>(revision);
+    if (same_paired_layout) {
+      paired_page_ = std::clamp(paired_page_, 0, paired_layout_.page_count() - 1);
+      InvalidateRect(window_, nullptr, FALSE);
+    } else if (!ResizePairedCard()) {
+      Hide();
+      result->Error("window_failed", "Unable to lay out the subtitle window.");
+      return;
+    }
+    ReportPairedPage();
+  } else {
+    const int dpi = static_cast<int>(WindowDpi(window_));
+    if (!SetWindowPos(window_, HWND_TOPMOST, 0, 0,
+            MulDiv(static_cast<int>(std::lround(width)), dpi, 96),
+            MulDiv(static_cast<int>(std::lround(height)), dpi, 96),
+            SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW)) {
     Hide();
     result->Error("window_failed", "Unable to show the subtitle window.");
     return;
+    }
+    Layout(true);
   }
-  Layout(true);
   result->Success();
 }
 
@@ -280,6 +322,56 @@ bool TextOverlayPlugin::UpdateFont() {
   return true;
 }
 
+bool TextOverlayPlugin::ResizePairedCard() {
+  if (resizing_card_ || !window_ || text_.empty()) return false;
+  RECT window{};
+  if (!GetWindowRect(window_, &window)) return false;
+  MONITORINFO monitor{};
+  monitor.cbSize = sizeof(monitor);
+  if (!GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST),
+                       &monitor)) {
+    return false;
+  }
+  const auto& work = monitor.rcWork;
+  const auto dpi = WindowDpi(window_);
+  const float scale = static_cast<float>(dpi) / 96;
+  const int max_width = std::min(
+      static_cast<int>(work.right - work.left),
+      MulDiv(auto_fit_ ? 2560 : requested_width_, dpi, 96));
+  const int max_height = std::min(
+      static_cast<int>(work.bottom - work.top),
+      MulDiv(auto_fit_ ? 1440 : requested_height_, dpi, 96));
+  if (!paired_layout_.Fit(text_, font_family_, static_cast<float>(font_size_),
+                          auto_fit_, static_cast<float>(max_width) / scale,
+                          static_cast<float>(max_height) / scale)) {
+    return false;
+  }
+  paired_page_ = std::clamp(paired_page_, 0, paired_layout_.page_count() - 1);
+  const int width = std::min(
+      max_width, static_cast<int>(std::ceil(paired_layout_.width() * scale)));
+  const int height = std::min(
+      max_height, static_cast<int>(std::ceil(paired_layout_.height() * scale)));
+  const LONG x = std::clamp(window.left, work.left, work.right - width);
+  const LONG y = std::clamp(window.top, work.top, work.bottom - height);
+  resizing_card_ = true;
+  const bool placed = SetWindowPos(window_, HWND_TOPMOST, x, y, width, height,
+      SWP_NOACTIVATE | SWP_SHOWWINDOW | (dragging_card_ ? SWP_NOMOVE : 0));
+  resizing_card_ = false;
+  InvalidateRect(window_, nullptr, FALSE);
+  return placed && SyncDragSurface();
+}
+
+void TextOverlayPlugin::ReportPairedPage() {
+  if (paired_revision_ == 0) return;
+  channel_->InvokeMethod("pageStatus", std::make_unique<flutter::EncodableValue>(
+      flutter::EncodableMap{
+          {flutter::EncodableValue("source"), flutter::EncodableValue(source_)},
+          {flutter::EncodableValue("revision"), flutter::EncodableValue(paired_revision_)},
+          {flutter::EncodableValue("page"), flutter::EncodableValue(paired_page_)},
+          {flutter::EncodableValue("count"), flutter::EncodableValue(paired_layout_.page_count())},
+      }));
+}
+
 void TextOverlayPlugin::Layout(bool scroll_to_end) {
   if (!window_ || !font_) return;
   RECT client{};
@@ -303,6 +395,15 @@ void TextOverlayPlugin::Paint() {
   HDC target = BeginPaint(window_, &paint);
   RECT client{};
   GetClientRect(window_, &client);
+  if (paired_card_) {
+    if (!paired_layout_.Draw(target, client, WindowDpi(window_), color_,
+                             color_key_, paired_page_)) {
+      SetDCBrushColor(target, color_key_);
+      FillRect(target, &client, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    }
+    EndPaint(window_, &paint);
+    return;
+  }
   HDC buffer = CreateCompatibleDC(target);
   HBITMAP bitmap = CreateCompatibleBitmap(target, std::max(1L, client.right),
                                           std::max(1L, client.bottom));
@@ -431,6 +532,9 @@ void TextOverlayPlugin::EndCardDrag(bool restore_start) {
   ShowWindow(drag_window_, SW_HIDE);
   SetDragOutline(false);
   if (GetCapture() == drag_window_) ReleaseCapture();
+  if (!text_.empty() && IsWindowVisible(window_) && ResizePairedCard()) {
+    ReportPairedPage();
+  }
 }
 
 LRESULT CALLBACK TextOverlayPlugin::DragWindowProc(
@@ -487,6 +591,8 @@ void TextOverlayPlugin::Scroll(int position) {
 }
 
 void TextOverlayPlugin::Hide() {
+  source_.clear();
+  text_.clear();
   if (drag_window_) {
     EndCardDrag();
     ShowWindow(drag_window_, SW_HIDE);
@@ -496,8 +602,6 @@ void TextOverlayPlugin::Hide() {
     if (paired_card_) KillTimer(window_, kCardPointerTimer);
     ShowWindow(window_, SW_HIDE);
   }
-  source_.clear();
-  text_.clear();
 }
 
 void TextOverlayPlugin::Close() {
@@ -533,10 +637,11 @@ LRESULT CALLBACK TextOverlayPlugin::WindowProc(
       if (self->drag_window_) self->SyncDragSurface();
       break;
     case WM_SIZE:
-      self->Layout(false);
+      if (!self->paired_card_) self->Layout(false);
       if (self->drag_window_) self->SyncDragSurface();
       return 0;
     case WM_GETMINMAXINFO: {
+      if (self->paired_card_) break;
       auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
       const int dpi = static_cast<int>(WindowDpi(window));
       info->ptMinTrackSize = {MulDiv(240, dpi, 96), MulDiv(80, dpi, 96)};
@@ -551,11 +656,24 @@ LRESULT CALLBACK TextOverlayPlugin::WindowProc(
       SetWindowPos(window, nullptr, rect->left, rect->top, rect->right - rect->left,
                     rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE |
                         (self->dragging_card_ ? SWP_NOMOVE : 0));
-      if (!self->UpdateFont()) OutputDebugStringW(L"DogShare: subtitle font update failed.\n");
-      self->Layout(false);
+      if (self->paired_card_) {
+        if (!self->dragging_card_ && !self->resizing_card_ &&
+            !self->text_.empty() && self->ResizePairedCard()) {
+          self->ReportPairedPage();
+        }
+      } else {
+        if (!self->UpdateFont()) OutputDebugStringW(L"DogShare: subtitle font update failed.\n");
+        self->Layout(false);
+      }
       return 0;
     }
+    case WM_DISPLAYCHANGE:
+    case WM_SETTINGCHANGE:
+      if (self->paired_card_ && !self->dragging_card_ && !self->text_.empty() &&
+          self->ResizePairedCard()) self->ReportPairedPage();
+      break;
     case WM_NCDESTROY:
+      self->text_.clear();
       self->EndCardDrag();
       self->window_ = nullptr;
       self->drag_window_ = nullptr;

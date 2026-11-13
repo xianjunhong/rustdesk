@@ -8,6 +8,8 @@
 #include <memory>
 #include <string>
 
+#include "paired_subtitle_layout.h"
+
 class TextOverlayPlugin : public flutter::Plugin {
  public:
   static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
@@ -26,6 +28,8 @@ class TextOverlayPlugin : public flutter::Plugin {
   void EndCardDrag(bool restore_start = false);
   bool SyncDragSurface();
   bool UpdateFont();
+  bool ResizePairedCard();
+  void ReportPairedPage();
   void Layout(bool scroll_to_end);
   void Paint();
   void Scroll(int position);
@@ -51,6 +55,13 @@ class TextOverlayPlugin : public flutter::Plugin {
   COLORREF color_key_ = RGB(1, 2, 3);
   bool paired_card_ = false;
   int scroll_ = 0;
+  PairedSubtitleLayout paired_layout_;
+  bool resizing_card_ = false;
+  bool auto_fit_ = true;
+  int requested_width_ = 640;
+  int requested_height_ = 360;
+  int paired_page_ = 0;
+  int paired_revision_ = 0;
 };
 
 #endif  // RUNNER_TEXT_OVERLAY_PLUGIN_H_

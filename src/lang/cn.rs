@@ -854,5 +854,10 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Send in real time", "实时发送"),
         ("Choose color", "选择颜色"),
         ("Enter subtitle text", "输入字幕文字"),
+        ("Receiver subtitle area", "B 端显示区域"),
+        ("Fit subtitles automatically", "自动适应宽高"),
+        ("Previous subtitle page", "上一页字幕"),
+        ("Next subtitle page", "下一页字幕"),
+        ("Subtitle is too long. Send it in parts.", "弹幕太长，请分段发送。"),
     ].iter().cloned().collect();
 }

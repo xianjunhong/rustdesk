@@ -815,6 +815,14 @@ impl Connection {
                             conn.send(msg_out).await;
                             conn.chat_unanswered = false;
                         }
+                        #[cfg(windows)]
+                        ipc::Data::DogShareSubtitlePage { revision, page, count } => {
+                            if conn.accepts_dogshare_subtitle() {
+                                if let Some(message) = crate::dogshare_subtitle::page_status_message(revision, page, count) {
+                                    conn.send(message).await;
+                                }
+                            }
+                        }
                         ipc::Data::SwitchPermission{name, enabled} => {
                             let enabled = enabled
                                 && !(crate::dogshare_role::is_receiver() && name == "file");
@@ -1888,12 +1896,16 @@ impl Connection {
     }
 
     #[cfg(windows)]
-    fn forward_dogshare_subtitle(&mut self, frame: DogShareSubtitle) {
-        if crate::dogshare_role::is_receiver()
+    fn accepts_dogshare_subtitle(&self) -> bool {
+        crate::dogshare_role::is_receiver()
             && self.authorized
             && self.account_ticket_consumed
             && self.authed_conn_type() == Some(AuthConnType::Remote)
-        {
+    }
+
+    #[cfg(windows)]
+    fn forward_dogshare_subtitle(&mut self, frame: DogShareSubtitle) {
+        if self.accepts_dogshare_subtitle() {
             if let Some(frame) = crate::dogshare_subtitle::to_ui_json(frame) {
                 self.send_to_cm(ipc::Data::DogShareSubtitle { frame });
             }

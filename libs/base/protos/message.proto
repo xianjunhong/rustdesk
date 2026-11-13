@@ -837,6 +837,16 @@ message DogShareSubtitle {
   float font_size = 3;
   string font_family = 4;
   uint32 color = 5; // 0xAARRGGBB
+  uint32 width = 6; // Logical pixels; both dimensions zero for auto fit.
+  uint32 height = 7;
+  uint32 page = 8; // Zero-based.
+  uint32 revision = 9; // Zero for clients without page feedback.
+}
+
+message DogShareSubtitlePage {
+  uint32 revision = 1;
+  uint32 page = 2;
+  uint32 count = 3;
 }
 
 message Misc {
@@ -883,6 +893,7 @@ message Misc {
     // by id again, so the shape just selected is always there to give.
     uint64 request_cursor_data = 39;
     DogShareSubtitle dogshare_subtitle = 50001;
+    DogShareSubtitlePage dogshare_subtitle_page = 50002;
   }
 }
 

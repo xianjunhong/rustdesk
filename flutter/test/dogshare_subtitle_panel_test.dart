@@ -223,6 +223,28 @@ void main() {
     await tester.pumpAndSettle();
     final settings = find.byType(CustomAlertDialog);
     expect(find.descendant(of: settings, matching: input), findsNothing);
+    final auto = find.widgetWithText(SwitchListTile, 'Fit subtitles automatically');
+    expect(tester.widget<SwitchListTile>(auto).value, isTrue);
+    expect(binding.frames.last.width, 0);
+    chat.textController.text = '仍未发送';
+    await tester.tap(auto);
+    await tester.pumpAndSettle();
+    final sliders = find.descendant(of: settings, matching: find.byType(Slider));
+    expect(sliders, findsNWidgets(4));
+    await tester.tapAt(tester.getCenter(sliders.at(0)));
+    await tester.pumpAndSettle();
+    await tester.tapAt(tester.getCenter(sliders.at(1)));
+    await tester.pumpAndSettle();
+    final manual = binding.frames.last;
+    expect(manual.width, greaterThan(DogShareSubtitleFrame.defaultWidth));
+    expect(manual.height, greaterThan(DogShareSubtitleFrame.defaultHeight));
+    expect(manual.text, '手动字幕');
+    expect(chat.textController.text, '仍未发送');
+    chat.clearDraft();
+    await tester.tap(auto);
+    await tester.pumpAndSettle();
+    expect(binding.frames.last.width, 0);
+    expect(binding.frames.last.height, 0);
     final opacity =
         find.descendant(of: settings, matching: find.byType(Slider)).last;
     await tester.tapAt(tester.getCenter(opacity));
@@ -235,6 +257,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(input, findsOneWidget);
 
+    final previousRevision = binding.frames.last.revision;
+    chat.subtitleDraft.receivePageStatus(previousRevision, 0, 3);
+    await tester.pumpAndSettle();
+    final next = find.byTooltip('Next subtitle page');
+    expect(find.text('1 / 3'), findsOneWidget);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(binding.frames.last.page, 1);
+    expect(binding.frames.last.text, '手动字幕');
+    chat.subtitleDraft.receivePageStatus(previousRevision, 0, 3);
+    await tester.pump();
+    expect(find.text('2 / 3'), findsOneWidget);
+
+    final oversized = List.filled(DogShareSubtitleFrame.maxTextUnits + 1, '文').join();
+    final beforeOversized = binding.frames.length;
+    await tester.enterText(input, oversized);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Subtitle is too long. Send it in parts.'), findsOneWidget);
+    expect(tester.widget<IconButton>(send).onPressed, isNull);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(chat.textController.text, oversized);
+    expect(binding.frames.length, beforeOversized);
     await tester.showKeyboard(input);
     final sentFrames = binding.frames.length;
     tester.testTextInput.updateEditingValue(const TextEditingValue(

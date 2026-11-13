@@ -109,6 +109,28 @@ void main() {
     expect(displayed['fontFamily'], 'SimHei');
     expect(displayed['color'], 0x80ab12cd);
     expect(displayed['pairedCard'], isTrue);
+    expect(displayed['autoFit'], isTrue);
+
+    await model.receiveRemoteSubtitle(
+      source: 'peer-a',
+      frame: const DogShareSubtitleFrame(
+        enabled: true,
+        text: '定稿',
+        fontSize: 96,
+        fontFamily: 'SimHei',
+        color: 0x80ab12cd,
+        width: 1200,
+        height: 240,
+        page: 1,
+        revision: 4,
+      ),
+    );
+    final resized = calls.last.arguments as Map;
+    expect(resized['autoFit'], isFalse);
+    expect(resized['width'], 1200);
+    expect(resized['height'], 240);
+    expect(resized['page'], 1);
+    expect(resized['revision'], 4);
 
     await model.receiveRemoteSubtitle(source: 'peer-a', frame: frame(''));
     expect(calls.last.method, 'hide');

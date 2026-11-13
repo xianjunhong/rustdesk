@@ -1741,6 +1741,8 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn job_done(&self, id: i32, file_num: i32);
     fn clear_all_jobs(&self);
     fn new_message(&self, msg: String);
+    #[cfg(windows)]
+    fn dogshare_subtitle_page(&self, _revision: u32, _page: u32, _count: u32) {}
     fn update_transfer_list(&self);
     fn load_last_job(&self, cnt: i32, job_json: &str, auto_start: bool);
     fn update_folder_files(

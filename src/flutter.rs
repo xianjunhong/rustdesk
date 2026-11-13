@@ -1028,6 +1028,19 @@ impl InvokeUiSession for FlutterHandler {
         self.push_event("chat_client_mode", &[("text", &msg)], &[]);
     }
 
+    #[cfg(windows)]
+    fn dogshare_subtitle_page(&self, revision: u32, page: u32, count: u32) {
+        self.push_event(
+            "dogshare_subtitle_page",
+            &[
+                ("revision", revision.to_string()),
+                ("page", page.to_string()),
+                ("count", count.to_string()),
+            ],
+            &[],
+        );
+    }
+
     fn switch_display(&self, display: &SwitchDisplay) {
         let resolutions = serialize_resolutions(&display.resolutions.resolutions);
         self.push_event(

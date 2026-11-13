@@ -408,6 +408,13 @@ pub fn send_chat(id: i32, text: String) {
     }
 }
 
+#[cfg(all(windows, feature = "flutter"))]
+pub fn send_dogshare_subtitle_page(id: i32, revision: u32, page: u32, count: u32) {
+    if let Some(client) = CLIENTS.read().unwrap().get(&id) {
+        allow_err!(client.tx.send(Data::DogShareSubtitlePage { revision, page, count }));
+    }
+}
+
 #[inline]
 #[cfg(not(any(target_os = "ios")))]
 pub fn switch_permission(id: i32, name: String, enabled: bool) {

@@ -119,6 +119,10 @@ class ChatModel with ChangeNotifier {
       supportsOutgoingSubtitles &&
       subtitleDraft.isComposing;
 
+  bool exceedsSubtitleTextLimit(String text) =>
+      supportsOutgoingSubtitles &&
+      (_subtitleDraft?.exceedsTextLimit(text) ?? false);
+
   Map<MessageKey, MessageBody> get messages => _messages;
 
   MessageKey get currentKey => _currentKey;
@@ -206,6 +210,7 @@ class ChatModel with ChangeNotifier {
   void sendDraft() {
     final value = textController.value;
     if (value.text.trim().isEmpty ||
+        exceedsSubtitleTextLimit(value.text) ||
         (value.isComposingRangeValid && !value.composing.isCollapsed)) return;
     send(ChatMessage(text: value.text, user: me, createdAt: DateTime.now()));
     textController.clear();
@@ -478,6 +483,7 @@ class ChatModel with ChangeNotifier {
     unawaited(TextOverlayModel.instance.receiveRemoteSubtitle(
       source: textOverlaySource(MessageKey(client.peerId, id)),
       frame: frame,
+      connId: id,
     ));
   }
 
@@ -598,8 +604,10 @@ class ChatModel with ChangeNotifier {
     }
     if (_subtitleDraft?.enabled == true && supportsOutgoingSubtitles) {
       if (subtitleDraft.isComposing) return;
-      message.text = subtitleDraft.submit(trimmedText);
-      if (message.text.isNotEmpty) insertMessage(_currentKey, message);
+      final submitted = subtitleDraft.submit(trimmedText);
+      if (submitted == null) return;
+      message.text = submitted;
+      insertMessage(_currentKey, message);
       notifyListeners();
       inputNode.requestFocus();
       return;
