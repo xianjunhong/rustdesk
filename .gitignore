@@ -65,6 +65,7 @@ flutter/web/
 !/src/bridge_generated.rs
 !/src/bridge_generated.io.rs
 !/flutter/assets/icon.png
+!/flutter/assets/dogshare_toolbar_*.svg
 
 # Local build tools, machine configuration, credentials and build products.
 /dogshare-tools/cargo/

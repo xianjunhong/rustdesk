@@ -207,6 +207,9 @@ def package(build_command, reuse_backend_from=None, backend_cache=None):
         raise RuntimeError('Rebuild the Rust role library for DogShare before packaging')
     if not (RELEASE / 'data/flutter_assets').is_dir():
         raise RuntimeError('Flutter assets directory is absent')
+    if BUILD_ROLES[PORTABLE_NAME] == 'controller':
+        for icon in ('pin', 'display', 'mode', 'communication', 'record', 'disconnect'):
+            require_file(RELEASE / f'data/flutter_assets/assets/dogshare_toolbar_{icon}.svg')
     for path in RELEASE.rglob('*'):
         if not path.resolve().is_relative_to(RELEASE.resolve()):
             raise RuntimeError(f'Release entry escapes its build directory: {path}')

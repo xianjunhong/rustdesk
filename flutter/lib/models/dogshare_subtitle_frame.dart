@@ -136,7 +136,7 @@ class DogShareSubtitleDraft extends ChangeNotifier {
 
   final SessionID sessionId;
   final TextEditingController _input;
-  bool _enabled = false;
+  bool? _enabled;
   bool _realtime = false;
   bool _autoFit = true;
   int _width = DogShareSubtitleFrame.defaultWidth;
@@ -151,7 +151,7 @@ class DogShareSubtitleDraft extends ChangeNotifier {
   String fontFamily = 'Microsoft YaHei';
   int color = 0xffdddddd;
 
-  bool get enabled => _enabled;
+  bool get enabled => _enabled ?? false;
   bool get realtime => _realtime;
   bool get autoFit => _autoFit;
   int get width => _width;
@@ -172,6 +172,10 @@ class DogShareSubtitleDraft extends ChangeNotifier {
         page: page,
         revision: _revision,
       );
+
+  void enableOnFirstChatOpen() {
+    if (_enabled == null) setDisplayEnabled(true);
+  }
 
   void setDisplayEnabled(bool enabled) {
     if (enabled == _enabled) return;

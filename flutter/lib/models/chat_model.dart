@@ -306,6 +306,7 @@ class ChatModel with ChangeNotifier {
     });
     overlayState.insert(overlay);
     chatWindowOverlayEntry = overlay;
+    if (supportsOutgoingSubtitles) subtitleDraft.enableOnFirstChatOpen();
     if (isMobile && !requestSoftKeyboard) {
       inputNode.addListener(_updateChatInputControl);
       _updateChatInputControl();

@@ -73,6 +73,69 @@ class _Session extends Fake implements FFI {
 }
 
 void main() {
+  testWidgets('paired chat starts with subtitles and remembers turning them off',
+      (tester) async {
+    final binding = _Binding();
+    platformFFI.setBindingForTesting(binding);
+    final wasTest = isTest;
+    isTest = true;
+    addTearDown(() => isTest = wasTest);
+    await initGlobalFFI();
+    draggablePositions.load();
+    final session = _Session();
+    session.ffiModel.pi.isSet.value = true;
+    session.ffiModel.waitForFirstImage.value = false;
+    final chat = session.chatModel;
+    chat.changeCurrentKey(MessageKey('paired-receiver', ChatModel.clientModeID));
+    final overlay = BlockableOverlayState()..applyFfi(session);
+    addTearDown(() {
+      chat.dispose();
+      chat.inputNode.dispose();
+    });
+    await tester.pumpWidget(MaterialApp(
+      theme: MyTheme.lightTheme,
+      home: Scaffold(
+        body: BlockableOverlay(state: overlay, underlying: const SizedBox()),
+      ),
+    ));
+    expect(binding.frames, isEmpty);
+    chat.showChatWindowOverlay();
+    await tester.pumpAndSettle();
+
+    final display = find.byType(Switch);
+    final input = find.byType(TextField);
+    expect(tester.widget<Switch>(display).value, isTrue);
+    expect(binding.frames.single.enabled, isTrue);
+    expect(binding.frames.single.text, isEmpty);
+    await tester.enterText(input, '第一条弹幕');
+    await tester.pump();
+    expect(binding.frames, hasLength(1));
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(binding.frames.last.text, '第一条弹幕');
+    expect(binding.chatMessages, isEmpty);
+
+    await tester.tap(display);
+    await tester.pumpAndSettle();
+    expect(binding.frames.last.enabled, isFalse);
+    final sentFrames = binding.frames.length;
+    chat.hideChatWindowOverlay();
+    await tester.pumpAndSettle();
+    chat.showChatWindowOverlay();
+    await tester.pumpAndSettle();
+    expect(tester.widget<Switch>(display).value, isFalse);
+    expect(binding.frames, hasLength(sentFrames));
+    await tester.enterText(input, '普通聊天');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(binding.chatMessages, ['普通聊天']);
+    expect(binding.frames, hasLength(sentFrames));
+    chat.hideChatWindowOverlay();
+    await tester.pumpAndSettle();
+  },
+      variant: const TargetPlatformVariant({TargetPlatform.windows}),
+      skip: !isWindows);
+
   testWidgets('one chat field sends ordinary, manual and live captions',
       (tester) async {
     final binding = _Binding();
