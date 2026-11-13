@@ -1563,9 +1563,9 @@ pub mod connection_manager {
             );
         }
 
-        fn tomdesk_subtitle(&self, id: i32, frame: String) {
+        fn dogshare_subtitle(&self, id: i32, frame: String) {
             self.push_event(
-                "tomdesk_subtitle",
+                "dogshare_subtitle",
                 &[("id", &id.to_string()), ("frame", &frame)],
             );
         }

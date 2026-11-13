@@ -1,18 +1,53 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/remote_page.dart';
+import 'package:flutter_hbb/generated_bridge.dart' show RustdeskImpl;
 import 'package:flutter_hbb/models/input_model.dart';
 import 'package:flutter_hbb/models/model.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/native/custom_cursor.dart';
 import 'package:flutter_hbb/utils/image.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
+
+class _Binding extends Fake implements RustdeskImpl {
+  _Binding({this.controller = false});
+  final bool controller;
+  final sentInput = <Symbol>[];
+
+  @override
+  bool isIncomingOnly({dynamic hint}) => false;
+  @override
+  bool isOutgoingOnly({dynamic hint}) => controller;
+  @override
+  String mainGetLocalOption({required String key, dynamic hint}) => '';
+  @override
+  int versionToNumber({required String v, dynamic hint}) =>
+      v.split('.').fold(0, (n, part) => n * 1000 + int.parse(part));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (const {
+      #sessionSendMouse,
+      #sessionSendPointer,
+      #sessionHandleFlutterKeyEvent,
+      #sessionHandleFlutterRawKeyEvent,
+      #sessionInputKey,
+    }.contains(invocation.memberName)) {
+      sentInput.add(invocation.memberName);
+      return Future<void>.value();
+    }
+    return super.noSuchMethod(invocation);
+  }
+}
 
 class _Canvas extends ChangeNotifier implements CanvasModel {
   _Canvas(String style)
@@ -71,13 +106,22 @@ class _Peer extends Fake implements FfiModel {
 }
 
 class _FFI extends Fake implements FFI {
-  _FFI(this.canvasModel);
+  _FFI(this.canvasModel, {bool realSession = false}) {
+    ffiModel = realSession ? FfiModel(WeakReference(this)) : _Peer();
+    inputModel = realSession ? InputModel(WeakReference(this)) : _Input();
+  }
   @override
   final CanvasModel canvasModel;
   @override
-  final ffiModel = _Peer();
+  late final FfiModel ffiModel;
   @override
-  final inputModel = _Input();
+  late final InputModel inputModel;
+  @override
+  final sessionId = const Uuid().v4obj();
+  @override
+  ConnType get connType => ConnType.defaultConn;
+  @override
+  bool get closed => false;
   @override
   var id = '';
 }
@@ -95,6 +139,7 @@ void main() {
       : const MethodChannel('flutter_custom_cursor');
   final registrations = <Map<dynamic, dynamic>>[];
   setUp(() {
+    platformFFI.setBindingForTesting(_Binding());
     registrations.clear();
     binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,
         (call) async {
@@ -106,6 +151,84 @@ void main() {
   });
   tearDown(() =>
       binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+  testWidgets('A browsing shows a local arrow without forwarding input',
+      (tester) async {
+    final core = _Binding(controller: true);
+    platformFFI.setBindingForTesting(core);
+    final canvas = _Canvas(kRemoteViewStyleAdaptive);
+    final ffi = _FFI(canvas, realSession: true)..id = 'browse';
+    ffi.ffiModel.pi
+      ..version = '1.4.6'
+      ..platform = kPeerPlatformWindows;
+    ffi.ffiModel.setViewOnly(ffi.id, true);
+    final overImage = true.obs;
+    addTearDown(canvas.dispose);
+    addTearDown(ffi.ffiModel.dispose);
+    addTearDown(ffi.inputModel.disposeRelativeMouseMode);
+
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(),
+      child: MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ImageModel>(create: (_) => _Image()),
+          ChangeNotifierProvider<CanvasModel>.value(value: canvas),
+          ChangeNotifierProvider<FfiModel>.value(value: ffi.ffiModel),
+        ],
+        child: ImagePaint(
+          ffi: ffi,
+          id: ffi.id,
+          zoomCursor: false.obs,
+          cursorOverImage: overImage,
+          keyboardEnabled: true.obs,
+          remoteCursorMoved: true.obs,
+        ),
+      ),
+    ));
+    MouseCursor cursor() => tester
+        .widget<MouseRegion>(find.descendant(
+            of: find.byType(ImagePaint), matching: find.byType(MouseRegion)))
+        .cursor;
+    expect(cursor(), SystemMouseCursors.basic);
+
+    final input = ffi.inputModel;
+    input.onPointHoverImage(const PointerHoverEvent(
+        kind: ui.PointerDeviceKind.mouse, position: Offset(20, 20)));
+    input.onPointDownImage(const PointerDownEvent(
+        kind: ui.PointerDeviceKind.mouse,
+        position: Offset(20, 20),
+        buttons: kPrimaryMouseButton));
+    input.onPointMoveImage(const PointerMoveEvent(
+        kind: ui.PointerDeviceKind.mouse, position: Offset(30, 30)));
+    input.onPointUpImage(const PointerUpEvent(
+        kind: ui.PointerDeviceKind.mouse, position: Offset(30, 30)));
+    input.onPointerSignalImage(const PointerScrollEvent(
+        kind: ui.PointerDeviceKind.mouse, scrollDelta: Offset(0, 10)));
+    for (final event in [
+      const KeyDownEvent(
+          physicalKey: PhysicalKeyboardKey.keyA,
+          logicalKey: LogicalKeyboardKey.keyA,
+          timeStamp: Duration(seconds: 1)),
+      const KeyUpEvent(
+          physicalKey: PhysicalKeyboardKey.keyA,
+          logicalKey: LogicalKeyboardKey.keyA,
+          timeStamp: Duration(seconds: 2)),
+    ]) {
+      expect(input.handleKeyEvent(event), KeyEventResult.handled);
+    }
+    expect(core.sentInput, isEmpty);
+    expect(ffi.ffiModel.showMyCursor, isFalse);
+
+    ffi.ffiModel.setViewOnly(ffi.id, false);
+    await tester.pump();
+    expect(cursor(), SystemMouseCursors.none);
+    ffi.ffiModel.setViewOnly(ffi.id, true);
+    await tester.pump();
+    expect(cursor(), SystemMouseCursors.basic);
+    overImage.value = false;
+    await tester.pump();
+    expect(cursor(), MouseCursor.defer);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: const TargetPlatformVariant({TargetPlatform.windows}));
   for (final scenario in [
     ((4, 64), 0.5, (2, 32)),
     ((8, 8), 0.5, (12, 12)),

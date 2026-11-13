@@ -20,16 +20,17 @@ import 'package:window_size/window_size.dart' as window_size;
 import '../../common.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
-import '../../models/tomdesk_role.dart';
-import '../../models/tomdesk_subtitle_frame.dart';
+import '../../models/dogshare_role.dart';
+import '../../models/dogshare_subtitle_frame.dart';
 import '../../common/shared_state.dart';
 import './popup_menu.dart';
+import './dogshare_toolbar_style.dart';
 import './kb_layout_type_chooser.dart';
 import 'package:flutter_hbb/utils/scale.dart';
 import 'package:flutter_hbb/common/widgets/custom_scale_base.dart';
 
 bool _usePairedControllerToolbar(FFI ffi) =>
-    isTomDeskController && ffi.connType == ConnType.defaultConn;
+    isDogShareController && ffi.connType == ConnType.defaultConn;
 
 enum _ToolbarEdge { top, right, bottom, left }
 
@@ -256,7 +257,8 @@ class ToolbarState {
   bool _isInitializing = false;
 
   ToolbarState() {
-    _pin = RxBool(false);
+    _pin = RxBool(isDogShareController);
+    if (isDogShareController) return;
     final s = bind.getLocalFlutterOption(k: kOptionRemoteMenubarState);
     if (s.isEmpty) {
       return;
@@ -633,11 +635,11 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   initState() {
     super.initState();
 
-    if (isTomDeskController && widget.ffi.connType == ConnType.defaultConn) {
+    if (isDogShareController && widget.ffi.connType == ConnType.defaultConn) {
       _subtitleReadyWorker = ever(ffiModel.waitForFirstImage, (bool waiting) {
         final draft = widget.ffi.chatModel.subtitleDraft;
         if (!waiting && pi.isSet.isTrue && draft.enabled) {
-          sendTomDeskSubtitleFrame(widget.ffi.sessionId, draft.frame);
+          sendDogShareSubtitleFrame(widget.ffi.sessionId, draft.frame);
         }
       });
     }
@@ -819,16 +821,17 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   Widget _buildToolbar(
       BuildContext context, _ToolbarEdge edge, bool isHorizontal) {
     final List<Widget> toolbarItems = [];
-    toolbarItems.add(_PinMenu(state: widget.state));
-    if (_usePairedControllerToolbar(widget.ffi)) {
+    final pairedController = _usePairedControllerToolbar(widget.ffi);
+    if (pairedController) {
       toolbarItems.addAll([
-        _PairedAdaptiveViewButton(ffi: widget.ffi),
         _PairedViewModeMenu(id: widget.id, ffi: widget.ffi),
         _ChatMenu(id: widget.id, ffi: widget.ffi, pairedController: true),
-        const _RecordMenu(alwaysVisible: true),
-        _CloseMenu(id: widget.id, ffi: widget.ffi),
+        const _RecordMenu(alwaysVisible: true, pairedController: true),
+        DogShareToolbarDivider(horizontalToolbar: isHorizontal),
+        _CloseMenu(id: widget.id, ffi: widget.ffi, pairedController: true),
       ]);
     } else {
+      toolbarItems.add(_PinMenu(state: widget.state));
       toolbarItems.add(Obx(() {
         final privacyModeState = PrivacyModeState.find(widget.id);
         if ((privacyModeState.isEmpty ||
@@ -878,7 +881,9 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       if (!isWeb) toolbarItems.add(_RecordMenu());
       toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     }
-    final toolbarBorderRadius = BorderRadius.all(Radius.circular(4.0));
+    final toolbarBorderRadius = pairedController
+        ? DogShareToolbarStyle.radius
+        : BorderRadius.all(Radius.circular(4.0));
     // innerAxis: how the toolbar icons themselves flow.
     // outerAxis: how the toolbar block and the handle stack against each other
     // (perpendicular to the dock edge, so the handle hangs off the interior face).
@@ -887,31 +892,30 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     final spacer = isHorizontal
         ? SizedBox(width: _ToolbarTheme.buttonHMargin * 2)
         : SizedBox(height: _ToolbarTheme.buttonHMargin * 2);
+    final toolbarContent = Flex(
+      direction: innerAxis,
+      mainAxisSize: MainAxisSize.min,
+      children: [spacer, ...toolbarItems, spacer],
+    );
     final toolbarMaterial = Material(
       elevation: _ToolbarTheme.elevation,
       shadowColor: MyTheme.color(context).shadow,
       borderRadius: toolbarBorderRadius,
-      color: Theme.of(context)
-          .menuBarTheme
-          .style
-          ?.backgroundColor
-          ?.resolve(MaterialState.values.toSet()),
+      color: pairedController
+          ? DogShareToolbarStyle.background
+          : Theme.of(context)
+              .menuBarTheme
+              .style
+              ?.backgroundColor
+              ?.resolve(MaterialState.values.toSet()),
       child: SingleChildScrollView(
         scrollDirection: innerAxis,
         child: Theme(
-          data: themeData(),
-          child: _ToolbarTheme.borderWrapper(
-              context,
-              Flex(
-                direction: innerAxis,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  spacer,
-                  ...toolbarItems,
-                  spacer,
-                ],
-              ),
-              toolbarBorderRadius),
+          data: themeData(pairedController: pairedController),
+          child: pairedController
+              ? DogShareToolbarFrame(child: toolbarContent)
+              : _ToolbarTheme.borderWrapper(
+                  context, toolbarContent, toolbarBorderRadius),
         ),
       ),
     );
@@ -929,7 +933,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     );
   }
 
-  ThemeData themeData() {
+  ThemeData themeData({bool pairedController = false}) {
     return Theme.of(context).copyWith(
       menuButtonTheme: MenuButtonThemeData(
         style: ButtonStyle(
@@ -952,28 +956,42 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         elevation: MaterialStatePropertyAll(0),
         shape: MaterialStatePropertyAll(BeveledRectangleBorder()),
       ).copyWith(
-              backgroundColor:
-                  Theme.of(context).menuBarTheme.style?.backgroundColor)),
+              backgroundColor: pairedController
+                  ? const WidgetStatePropertyAll(Colors.transparent)
+                  : Theme.of(context).menuBarTheme.style?.backgroundColor)),
     );
   }
 }
 
 class _PinMenu extends StatelessWidget {
   final ToolbarState state;
-  const _PinMenu({Key? key, required this.state}) : super(key: key);
+  final bool pairedController;
+  const _PinMenu({Key? key, required this.state, this.pairedController = false})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Obx(
       () => _IconMenuButton(
         assetName: state.pin ? "assets/pinned.svg" : "assets/unpinned.svg",
+        icon: pairedController
+            ? DogShareToolbarIcon(
+                symbol: DogShareToolbarSymbol.pin, active: state.pin)
+            : null,
         tooltip: state.pin ? 'Unpin Toolbar' : 'Pin Toolbar',
         onPressed: state.switchPin,
-        color:
-            state.pin ? _ToolbarTheme.blueColor : _ToolbarTheme.inactiveColor,
-        hoverColor: state.pin
-            ? _ToolbarTheme.hoverBlueColor
-            : _ToolbarTheme.hoverInactiveColor,
+        color: pairedController
+            ? (state.pin ? DogShareToolbarStyle.selected : Colors.transparent)
+            : (state.pin
+                ? _ToolbarTheme.blueColor
+                : _ToolbarTheme.inactiveColor),
+        hoverColor: pairedController
+            ? (state.pin
+                ? DogShareToolbarStyle.selectedHover
+                : DogShareToolbarStyle.hover)
+            : (state.pin
+                ? _ToolbarTheme.hoverBlueColor
+                : _ToolbarTheme.hoverInactiveColor),
       ),
     );
   }
@@ -2843,24 +2861,6 @@ class _KeyboardMenu extends StatelessWidget {
   }
 }
 
-class _PairedAdaptiveViewButton extends StatelessWidget {
-  final FFI ffi;
-  const _PairedAdaptiveViewButton({required this.ffi});
-
-  @override
-  Widget build(BuildContext context) => _IconMenuButton(
-        assetName: 'assets/display.svg',
-        tooltip: 'Scale adaptive',
-        color: _ToolbarTheme.blueColor,
-        hoverColor: _ToolbarTheme.hoverBlueColor,
-        onPressed: () async {
-          await bind.sessionSetViewStyle(
-              sessionId: ffi.sessionId, value: kRemoteViewStyleAdaptive);
-          ffi.canvasModel.updateViewStyle();
-        },
-      );
-}
-
 class _PairedViewModeMenu extends StatelessWidget {
   final String id;
   final FFI ffi;
@@ -2886,10 +2886,15 @@ class _PairedViewModeMenu extends StatelessWidget {
               versionCmp(model.pi.version, '1.2.0') >= 0 && model.keyboard;
           return _IconSubmenuButton(
             tooltip: 'Input Control',
-            svg: 'assets/keyboard_mouse.svg',
+            icon: DogShareToolbarIcon(
+                symbol: DogShareToolbarSymbol.mode, active: model.viewOnly),
             ffi: ffi,
-            color: _ToolbarTheme.blueColor,
-            hoverColor: _ToolbarTheme.hoverBlueColor,
+            color: model.viewOnly
+                ? DogShareToolbarStyle.selected
+                : Colors.transparent,
+            hoverColor: model.viewOnly
+                ? DogShareToolbarStyle.selectedHover
+                : DogShareToolbarStyle.hover,
             menuChildrenGetter: (_) => [
               RdoMenuButton<bool>(
                 value: false,
@@ -2944,9 +2949,26 @@ class _ChatMenuState extends State<_ChatMenu> {
         tooltip: 'Chat',
         key: chatButtonKey,
         svg: 'assets/chat.svg',
+        icon: widget.pairedController
+            ? DogShareToolbarIcon(
+                symbol: DogShareToolbarSymbol.communication,
+                active: status == VoiceCallStatus.connected)
+            : null,
         ffi: widget.ffi,
-        color: _ToolbarTheme.blueColor,
-        hoverColor: _ToolbarTheme.hoverBlueColor,
+        color: widget.pairedController
+            ? (status == VoiceCallStatus.connected
+                ? DogShareToolbarStyle.selected
+                : status == VoiceCallStatus.waitingForResponse
+                    ? DogShareToolbarStyle.waiting
+                    : Colors.transparent)
+            : _ToolbarTheme.blueColor,
+        hoverColor: widget.pairedController
+            ? (status == VoiceCallStatus.connected
+                ? DogShareToolbarStyle.selectedHover
+                : status == VoiceCallStatus.waitingForResponse
+                    ? DogShareToolbarStyle.waitingHover
+                    : DogShareToolbarStyle.hover)
+            : _ToolbarTheme.hoverBlueColor,
         menuChildrenGetter: (menu) =>
             [textChat(), ..._voiceCallItems(status, menu)],
       );
@@ -3126,7 +3148,10 @@ Widget _buildVoiceCallAudioInput(FFI ffi) => AudioInput(
 
 class _RecordMenu extends StatelessWidget {
   final bool alwaysVisible;
-  const _RecordMenu({Key? key, this.alwaysVisible = false}) : super(key: key);
+  final bool pairedController;
+  const _RecordMenu(
+      {Key? key, this.alwaysVisible = false, this.pairedController = false})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -3141,16 +3166,30 @@ class _RecordMenu extends StatelessWidget {
     }
     return _IconMenuButton(
       assetName: 'assets/rec.svg',
+      icon: pairedController
+          ? DogShareToolbarIcon(
+              symbol: DogShareToolbarSymbol.record,
+              active: recordingModel.start,
+              enabled: canRecord)
+          : null,
       tooltip: recordingModel.start
           ? 'Stop session recording'
           : 'Start session recording',
       onPressed: canRecord ? () => recordingModel.toggle() : null,
-      color: recordingModel.start
-          ? _ToolbarTheme.redColor
-          : _ToolbarTheme.blueColor,
-      hoverColor: recordingModel.start
-          ? _ToolbarTheme.hoverRedColor
-          : _ToolbarTheme.hoverBlueColor,
+      color: pairedController
+          ? (recordingModel.start
+              ? DogShareToolbarStyle.recording
+              : Colors.transparent)
+          : (recordingModel.start
+              ? _ToolbarTheme.redColor
+              : _ToolbarTheme.blueColor),
+      hoverColor: pairedController
+          ? (recordingModel.start
+              ? DogShareToolbarStyle.recordingHover
+              : DogShareToolbarStyle.hover)
+          : (recordingModel.start
+              ? _ToolbarTheme.hoverRedColor
+              : _ToolbarTheme.hoverBlueColor),
     );
   }
 }
@@ -3158,13 +3197,21 @@ class _RecordMenu extends StatelessWidget {
 class _CloseMenu extends StatelessWidget {
   final String id;
   final FFI ffi;
-  const _CloseMenu({Key? key, required this.id, required this.ffi})
+  final bool pairedController;
+  const _CloseMenu(
+      {Key? key,
+      required this.id,
+      required this.ffi,
+      this.pairedController = false})
       : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return _IconMenuButton(
       assetName: 'assets/close.svg',
+      icon: pairedController
+          ? const DogShareToolbarIcon(symbol: DogShareToolbarSymbol.disconnect)
+          : null,
       tooltip: 'Close',
       onPressed: () async {
         if (await showConnEndAuditDialogCloseCanceled(ffi: ffi)) {
@@ -3172,8 +3219,10 @@ class _CloseMenu extends StatelessWidget {
         }
         closeConnection(id: id);
       },
-      color: _ToolbarTheme.redColor,
-      hoverColor: _ToolbarTheme.hoverRedColor,
+      color: pairedController ? Colors.transparent : _ToolbarTheme.redColor,
+      hoverColor: pairedController
+          ? DogShareToolbarStyle.recording
+          : _ToolbarTheme.hoverRedColor,
     );
   }
 }
@@ -3788,8 +3837,12 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
                 child: Icon(
                   _toolbarCollapseIcon(widget.edge.value, collapse.isTrue),
                   size: iconSize,
+                  color: pairedController ? DogShareToolbarStyle.ink : null,
                 ),
               ))),
+          hoverColor: pairedController
+              ? DogShareToolbarStyle.accent
+              : _ToolbarTheme.blueColor,
         ),
         if (isWebDesktop)
           Obx(() {

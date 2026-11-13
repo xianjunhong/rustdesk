@@ -189,7 +189,7 @@ pub trait InvokeUiCM: Send + Clone + 'static + Sized {
 
     fn new_message(&self, id: i32, text: String);
 
-    fn tomdesk_subtitle(&self, _id: i32, _frame: String) {}
+    fn dogshare_subtitle(&self, _id: i32, _frame: String) {}
 
     fn change_theme(&self, dark: String);
 
@@ -367,7 +367,7 @@ pub fn get_click_time() -> i64 {
 #[inline]
 #[cfg(not(any(target_os = "ios")))]
 pub fn authorize(id: i32) {
-    if crate::tomdesk_role::is_receiver() {
+    if crate::dogshare_role::is_receiver() {
         return;
     }
     if let Some(client) = CLIENTS.write().unwrap().get_mut(&id) {
@@ -411,7 +411,7 @@ pub fn send_chat(id: i32, text: String) {
 #[inline]
 #[cfg(not(any(target_os = "ios")))]
 pub fn switch_permission(id: i32, name: String, enabled: bool) {
-    if crate::tomdesk_role::is_receiver() && name == "file" && enabled {
+    if crate::dogshare_role::is_receiver() && name == "file" && enabled {
         return;
     }
     #[cfg(target_os = "android")]
@@ -485,7 +485,7 @@ pub fn has_active_clients() -> bool {
 #[cfg(feature = "flutter")]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn switch_back(id: i32) {
-    if crate::tomdesk_role::is_split() {
+    if crate::dogshare_role::is_split() {
         return;
     }
     if let Some(client) = CLIENTS.read().unwrap().get(&id) {
@@ -595,8 +595,8 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
                                 Data::ChatMessage { text } => {
                                     self.cm.new_message(self.conn_id, text);
                                 }
-                                Data::TomDeskSubtitle { frame } => {
-                                    self.cm.tomdesk_subtitle(self.conn_id, frame);
+                                Data::DogShareSubtitle { frame } => {
+                                    self.cm.dogshare_subtitle(self.conn_id, frame);
                                 }
                                 Data::SwitchPermission { name, enabled } => {
                                     // Keep this branch scoped to privacy mode rollback.

@@ -52,7 +52,7 @@ pub fn core_main() -> Option<CoreMainAction> {
         // return None to terminate the process
         return None;
     }
-    if let Err(error) = crate::tomdesk_role::initialize() {
+    if let Err(error) = crate::dogshare_role::initialize() {
         return Some(CoreMainAction::ExitFailure(error));
     }
     let mut args = Vec::new();

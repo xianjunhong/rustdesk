@@ -86,7 +86,7 @@ message LoginRequest {
   string avatar = 17;
   bytes trusted_device_v2_token = 18;
   bool trusted_device_v2_supported = 19;
-  string tomdesk_account_ticket = 20;
+  string dogshare_account_ticket = 20;
 }
 
 message Terminal {
@@ -830,8 +830,8 @@ message MessageQuery {
   int32 switch_display = 1;
 }
 
-// Complete, ephemeral subtitle state for an authorized TomDesk A -> B session.
-message TomDeskSubtitle {
+// Complete, ephemeral subtitle state for an authorized DogShare A -> B session.
+message DogShareSubtitle {
   bool enabled = 1;
   string text = 2;
   float font_size = 3;
@@ -882,7 +882,7 @@ message Misc {
     // is rebuilt, and held again, the next time it is shown, before any connection names it
     // by id again, so the shape just selected is always there to give.
     uint64 request_cursor_data = 39;
-    TomDeskSubtitle tomdesk_subtitle = 50001;
+    DogShareSubtitle dogshare_subtitle = 50001;
   }
 }
 

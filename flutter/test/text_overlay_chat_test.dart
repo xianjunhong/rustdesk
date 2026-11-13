@@ -10,7 +10,7 @@ import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/text_overlay_model.dart';
-import 'package:flutter_hbb/models/tomdesk_subtitle_frame.dart';
+import 'package:flutter_hbb/models/dogshare_subtitle_frame.dart';
 import 'package:flutter_test/flutter_test.dart' hide isWindows;
 import 'package:uuid/uuid.dart';
 
@@ -111,7 +111,7 @@ void main() {
 
     void setCaptions(bool enabled) => chat.receiveRemoteSubtitle({
           'id': '1',
-          'frame': TomDeskSubtitleFrame(
+          'frame': DogShareSubtitleFrame(
             enabled: enabled,
             text: '',
             fontSize: 16,
@@ -139,7 +139,7 @@ void main() {
     final key = MessageKey('peer-a', 1);
     final overlay = TextOverlayModel.instance;
     final source = chat.textOverlaySource(key);
-    const channel = MethodChannel('tomdesk/text_overlay');
+    const channel = MethodChannel('dogshare/text_overlay');
     const windows = MethodChannel('window_manager');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

@@ -6,9 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
-import 'package:flutter_hbb/models/tomdesk_account_gate.dart';
-import 'package:flutter_hbb/models/tomdesk_role.dart';
-import 'package:flutter_hbb/models/tomdesk_receiver_window.dart';
+import 'package:flutter_hbb/models/dogshare_account_gate.dart';
+import 'package:flutter_hbb/models/dogshare_role.dart';
+import 'package:flutter_hbb/models/dogshare_receiver_window.dart';
 import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -805,7 +805,7 @@ Future<bool?> loginDialog() {
 Future<bool?> _openLoginDialogOnce() async {
   try {
     final result = await _openLoginDialog();
-    await collapseTomDeskReceiverAfterLogin(result);
+    await collapseDogShareReceiverAfterLogin(result);
     return result;
   } finally {
     _activeLoginDialog = null;
@@ -843,7 +843,7 @@ Future<bool?> _openLoginDialog() async {
     }
   }
 
-  if (!TomDeskAccountGate.isRequired) {
+  if (!DogShareAccountGate.isRequired) {
     Future.delayed(Duration.zero, fetchLoginOptions);
   }
 
@@ -870,28 +870,28 @@ Future<bool?> _openLoginDialog() async {
       switch (resp.type) {
         case HttpType.kAuthResTypeToken:
           if (resp.access_token != null) {
-            final requiresTomDeskAccount = TomDeskAccountGate.isRequired;
+            final requiresDogShareAccount = DogShareAccountGate.isRequired;
             if (storeIfAccessToken) {
               await bind.mainSetLocalOption(
                   key: 'access_token', value: resp.access_token!);
-              if (!requiresTomDeskAccount) {
+              if (!requiresDogShareAccount) {
                 await bind.mainSetLocalOption(
                     key: 'user_info', value: jsonEncode(resp.user ?? {}));
               }
             }
-            if (requiresTomDeskAccount) {
+            if (requiresDogShareAccount) {
               if (bind.mainGetLocalOption(key: 'access_token') !=
                   resp.access_token) {
-                throw RequestException(0, tomDeskCredentialStoreFailed);
+                throw RequestException(0, dogShareCredentialStoreFailed);
               }
-              final account = TomDeskAccountGate.instance;
+              final account = DogShareAccountGate.instance;
               if (storeIfAccessToken) {
                 // Fence off any periodic check begun while the old credential
                 // was still readable, in both Dart and the native lease.
                 account.invalidate();
               }
               if (!await account.refresh()) {
-                throw RequestException(0, tomDeskAccountUnavailable);
+                throw RequestException(0, dogShareAccountUnavailable);
               }
             }
             if (close != null) {
@@ -961,19 +961,19 @@ Future<bool?> _openLoginDialog() async {
             type: HttpType.kAuthReqTypeAccount));
         await handleLoginResponse(resp, true, close);
       } on RequestException catch (err) {
-        passwordMsg = TomDeskAccountGate.isRequired
-            ? tomDeskLoginErrorText(err.cause)
+        passwordMsg = DogShareAccountGate.isRequired
+            ? dogShareLoginErrorText(err.cause)
             : translate(err.cause);
       } catch (err) {
-        passwordMsg = TomDeskAccountGate.isRequired
-            ? translate(tomDeskAccountUnavailable)
+        passwordMsg = DogShareAccountGate.isRequired
+            ? translate(dogShareAccountUnavailable)
             : "Unknown Error: $err";
       }
       curOP.value = '';
       setState(() => isInProgress = false);
     }
 
-    final pairedRole = tomDeskClientRole;
+    final pairedRole = dogShareClientRole;
     if (pairedRole != null) {
       return CustomAlertDialog(
         title: Row(
@@ -990,7 +990,7 @@ Future<bool?> _openLoginDialog() async {
         contentBoxConstraints: const BoxConstraints(maxWidth: 320),
         content: _PairedAccountLoginFields(
           hint: pairedRole == 'receiver'
-              ? tomDeskReceiverConsent
+              ? dogShareReceiverConsent
               : 'Accounts are managed by your administrator.',
           username: username,
           password: password,
@@ -1134,11 +1134,11 @@ Future<bool?> _openLoginDialog() async {
             onLogin: onLogin,
             userFocusNode: userFocusNode,
           ),
-          if (!TomDeskAccountGate.isRequired) thirdAuthWidget(),
-          if (TomDeskAccountGate.isRequired)
+          if (!DogShareAccountGate.isRequired) thirdAuthWidget(),
+          if (DogShareAccountGate.isRequired)
             Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: Text(translate(isTomDeskReceiver ? tomDeskReceiverConsent
+              child: Text(translate(isDogShareReceiver ? dogShareReceiverConsent
                   : 'Accounts are managed by your administrator.')),
             ),
         ],

@@ -10,7 +10,7 @@ import '../../consts.dart';
 import '../../desktop/widgets/tabbar_widget.dart';
 import '../../models/chat_model.dart';
 import '../../models/model.dart';
-import '../../models/tomdesk_role.dart';
+import '../../models/dogshare_role.dart';
 import 'chat_page.dart';
 
 class DraggableChatWindow extends StatelessWidget {
@@ -33,7 +33,7 @@ class DraggableChatWindow extends StatelessWidget {
       draggablePositions.chatWindow.update(position);
     }
     if (isDesktop &&
-        isTomDeskController &&
+        isDogShareController &&
         chatModel.parent.target?.connType == ConnType.defaultConn) {
       return _ResizablePairedChatWindow(
         chatModel: chatModel,

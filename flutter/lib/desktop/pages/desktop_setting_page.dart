@@ -16,7 +16,7 @@ import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/mobile/widgets/dialog.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
-import '../../models/tomdesk_account_gate.dart';
+import '../../models/dogshare_account_gate.dart';
 import 'package:flutter_hbb/models/printer_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/shortcut_model.dart';
@@ -2288,7 +2288,7 @@ class _AccountState extends State<_Account> {
       children: [
         _Card(title: 'Account', children: [
           accountAction(), useInfo(),
-          if (TomDeskAccountGate.isRequired)
+          if (DogShareAccountGate.isRequired)
             Obx(() => gFFI.userModel.networkError.value.isEmpty
                 ? const SizedBox.shrink()
                 : Padding(

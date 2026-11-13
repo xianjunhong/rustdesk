@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'tomdesk_account_gate.dart';
-import 'tomdesk_subtitle_frame.dart';
+import 'dogshare_account_gate.dart';
+import 'dogshare_subtitle_frame.dart';
 
 class TextOverlayModel extends ChangeNotifier {
   static final instance = TextOverlayModel();
-  static const _channel = MethodChannel('tomdesk/text_overlay');
+  static const _channel = MethodChannel('dogshare/text_overlay');
   static const _maxTextLength = 16000;
 
   String? _source;
@@ -23,10 +23,10 @@ class TextOverlayModel extends ChangeNotifier {
   double width = 640;
   double height = 360;
 
-  final TomDeskAccountGate _account;
+  final DogShareAccountGate _account;
 
-  TextOverlayModel({TomDeskAccountGate? account})
-      : _account = account ?? TomDeskAccountGate.instance {
+  TextOverlayModel({DogShareAccountGate? account})
+      : _account = account ?? DogShareAccountGate.instance {
     _account.addListener(_accountChanged);
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'closed' &&
@@ -43,7 +43,7 @@ class TextOverlayModel extends ChangeNotifier {
   void _accountChanged() {
     final source = _source;
     if (source != null && !_account.authorized) {
-      error = tomDeskSignInRequired;
+      error = dogShareSignInRequired;
       unawaited(disable(source));
     }
   }
@@ -65,7 +65,7 @@ class TextOverlayModel extends ChangeNotifier {
   }) async {
     if (source.isEmpty) return;
     if (!await _account.refresh()) {
-      error = tomDeskSignInRequired;
+      error = dogShareSignInRequired;
       notifyListeners();
       return;
     }
@@ -91,7 +91,7 @@ class TextOverlayModel extends ChangeNotifier {
 
   Future<void> receiveRemoteSubtitle({
     required String source,
-    required TomDeskSubtitleFrame frame,
+    required DogShareSubtitleFrame frame,
   }) async {
     if (source.isEmpty) return;
     if (!frame.enabled || frame.text.trim().isEmpty || frame.color >> 24 == 0) {
@@ -160,7 +160,7 @@ class TextOverlayModel extends ChangeNotifier {
     final source = _source;
     if (source == null) return;
     if (!_account.overlayAllowed) {
-      error = tomDeskSignInRequired;
+      error = dogShareSignInRequired;
       await disable(source);
       return;
     }

@@ -534,7 +534,7 @@ impl Connection {
         meta: super::ConnectionMeta,
         unauthorized: UnauthorizedID,
     ) {
-        if crate::tomdesk_role::is_controller() {
+        if crate::dogshare_role::is_controller() {
             return;
         }
         let super::ConnectionMeta {
@@ -720,8 +720,8 @@ impl Connection {
         std::thread::spawn(move || Self::handle_input(_rx_input, tx_cloned));
         let mut second_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
         let mut account_timer = time::interval_at(
-            Instant::now() + crate::tomdesk_account::RECHECK_INTERVAL,
-            crate::tomdesk_account::RECHECK_INTERVAL,
+            Instant::now() + crate::dogshare_account::RECHECK_INTERVAL,
+            crate::dogshare_account::RECHECK_INTERVAL,
         );
 
         #[cfg(feature = "unix-file-copy-paste")]
@@ -764,7 +764,7 @@ impl Connection {
                 Some(data) = rx_from_cm.recv() => {
                     match data {
                         ipc::Data::Authorize => {
-                            if crate::tomdesk_role::is_receiver() {
+                            if crate::dogshare_role::is_receiver() {
                                 conn.send_login_error("DogShare B requires server-authorized account pairing.").await;
                                 continue;
                             }
@@ -817,7 +817,7 @@ impl Connection {
                         }
                         ipc::Data::SwitchPermission{name, enabled} => {
                             let enabled = enabled
-                                && !(crate::tomdesk_role::is_receiver() && name == "file");
+                                && !(crate::dogshare_role::is_receiver() && name == "file");
                             log::info!("Change permission {} -> {}", name, enabled);
                             if &name == "keyboard" {
                                 conn.keyboard = enabled;
@@ -990,7 +990,7 @@ impl Connection {
                         #[cfg(feature = "flutter")]
                         #[cfg(not(any(target_os = "android", target_os = "ios")))]
                         ipc::Data::SwitchSidesBack => {
-                            if crate::tomdesk_role::is_split() {
+                            if crate::dogshare_role::is_split() {
                                 continue;
                             }
                             let mut misc = Misc::new();
@@ -1000,7 +1000,7 @@ impl Connection {
                             conn.send(msg).await;
                         }
                         ipc::Data::VoiceCallResponse(accepted) => {
-                            if !crate::tomdesk_role::is_receiver() {
+                            if !crate::dogshare_role::is_receiver() {
                                 conn.handle_voice_call(accepted).await;
                             }
                         }
@@ -1192,7 +1192,7 @@ impl Connection {
                     }
                 }
                 _ = account_timer.tick(), if cfg!(windows) && conn.authorized => {
-                    if let Err(error) = crate::tomdesk_account::check_connection(&conn.lr).await {
+                    if let Err(error) = crate::dogshare_account::check_connection(&conn.lr).await {
                         conn.send_close_reason_no_retry(&error.to_string()).await;
                         conn.on_close("DogShare account authorization ended", true).await;
                         break;
@@ -1374,8 +1374,8 @@ impl Connection {
             self.stream.set_raw();
             let mut hbbs_rx = crate::hbbs_http::sync::signal_receiver();
             let mut account_timer = time::interval_at(
-                Instant::now() + crate::tomdesk_account::RECHECK_INTERVAL,
-                crate::tomdesk_account::RECHECK_INTERVAL,
+                Instant::now() + crate::dogshare_account::RECHECK_INTERVAL,
+                crate::dogshare_account::RECHECK_INTERVAL,
             );
             loop {
                 tokio::select! {
@@ -1415,7 +1415,7 @@ impl Connection {
                         }
                     },
                     _ = account_timer.tick(), if cfg!(windows) => {
-                        crate::tomdesk_account::check_connection(&self.lr).await?;
+                        crate::dogshare_account::check_connection(&self.lr).await?;
                     }
                     _ = self.timer.tick() => {
                         if last_recv_time.elapsed() >= H1 {
@@ -1888,23 +1888,23 @@ impl Connection {
     }
 
     #[cfg(windows)]
-    fn forward_tomdesk_subtitle(&mut self, frame: TomDeskSubtitle) {
-        if crate::tomdesk_role::is_receiver()
+    fn forward_dogshare_subtitle(&mut self, frame: DogShareSubtitle) {
+        if crate::dogshare_role::is_receiver()
             && self.authorized
             && self.account_ticket_consumed
             && self.authed_conn_type() == Some(AuthConnType::Remote)
         {
-            if let Some(frame) = crate::tomdesk_subtitle::to_ui_json(frame) {
-                self.send_to_cm(ipc::Data::TomDeskSubtitle { frame });
+            if let Some(frame) = crate::dogshare_subtitle::to_ui_json(frame) {
+                self.send_to_cm(ipc::Data::DogShareSubtitle { frame });
             }
         }
     }
 
     async fn check_account_ticket(&mut self) -> bool {
         let result = if self.account_ticket_consumed {
-            crate::tomdesk_account::check_connection(&self.lr).await
+            crate::dogshare_account::check_connection(&self.lr).await
         } else {
-            crate::tomdesk_account::consume_ticket(&self.lr).await
+            crate::dogshare_account::consume_ticket(&self.lr).await
         };
         match result {
             Ok(()) => {
@@ -1924,7 +1924,7 @@ impl Connection {
         if self.authorized {
             return true;
         }
-        if let Err(error) = crate::tomdesk_role::require_incoming(&self.lr) {
+        if let Err(error) = crate::dogshare_role::require_incoming(&self.lr) {
             self.send_login_error(error.to_string()).await;
             return false;
         }
@@ -2773,7 +2773,7 @@ impl Connection {
 
     #[inline]
     pub fn is_permission_enabled_locally(enable_prefix_option: &str) -> bool {
-        if crate::tomdesk_role::blocks_permission(enable_prefix_option) {
+        if crate::dogshare_role::blocks_permission(enable_prefix_option) {
             return false;
         }
         #[cfg(feature = "flutter")]
@@ -2797,7 +2797,7 @@ impl Connection {
         control_permissions: &Option<ControlPermissions>,
     ) -> bool {
         use hbb_common::rendezvous_proto::control_permissions::Permission;
-        if crate::tomdesk_role::blocks_permission(enable_prefix_option) {
+        if crate::dogshare_role::blocks_permission(enable_prefix_option) {
             return false;
         }
         if let Some(control_permissions) = control_permissions {
@@ -2994,12 +2994,12 @@ impl Connection {
         }
         // After handling CloseReason messages, proceed to process other message types
         if let Some(message::Union::LoginRequest(lr)) = msg.union {
-            if let Err(error) = crate::tomdesk_role::require_incoming(&lr) {
+            if let Err(error) = crate::dogshare_role::require_incoming(&lr) {
                 self.send_login_error(error.to_string()).await;
                 return false;
             }
             #[cfg(windows)]
-            if let Err(error) = crate::tomdesk_account::validate_ticket(&lr.tomdesk_account_ticket) {
+            if let Err(error) = crate::dogshare_account::validate_ticket(&lr.dogshare_account_ticket) {
                 self.send_login_error(error.to_string()).await;
                 return false;
             }
@@ -3114,7 +3114,7 @@ impl Connection {
                 self.try_start_cm_ipc();
             }
 
-            if crate::tomdesk_role::is_receiver() {
+            if crate::dogshare_role::is_receiver() {
                 self.require_2fa = None;
                 self.awaiting_2fa = false;
                 self.trusted_device = None;
@@ -3259,7 +3259,7 @@ impl Connection {
                 }
             }
         } else if let Some(message::Union::SwitchSidesResponse(_s)) = msg.union {
-            if crate::tomdesk_role::is_split() {
+            if crate::dogshare_role::is_split() {
                 self.send_login_error("Switching sides is unavailable in DogShare A/B.").await;
                 return false;
             }
@@ -4035,8 +4035,8 @@ impl Connection {
                             self.toggle_privacy_mode(t).await;
                         }
                     }
-                    Some(misc::Union::TomdeskSubtitle(frame)) => {
-                        self.forward_tomdesk_subtitle(frame);
+                    Some(misc::Union::DogshareSubtitle(frame)) => {
+                        self.forward_dogshare_subtitle(frame);
                     }
                     Some(misc::Union::ChatMessage(c)) => {
                         self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
@@ -4115,7 +4115,7 @@ impl Connection {
                     #[cfg(feature = "flutter")]
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     Some(misc::Union::SwitchSidesRequest(s)) => {
-                        if crate::tomdesk_role::is_split() {
+                        if crate::dogshare_role::is_split() {
                             log::trace!("Ignored switch-sides request in a fixed-role DogShare edition");
                             return true;
                         }
@@ -4225,7 +4225,7 @@ impl Connection {
                                 .unwrap_or(NonZeroI64::new(get_time()).unwrap()),
                         );
                         #[cfg(windows)]
-                        if crate::tomdesk_role::is_receiver() {
+                        if crate::dogshare_role::is_receiver() {
                             self.answer_paired_voice_call().await;
                             return true;
                         }
@@ -5026,7 +5026,7 @@ impl Connection {
             && matches!(
                 tokio::time::timeout(
                     Duration::from_secs(4),
-                    crate::tomdesk_account::check_voice_connection(&self.lr),
+                    crate::dogshare_account::check_voice_connection(&self.lr),
                 )
                 .await,
                 Ok(Ok(()))

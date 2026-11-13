@@ -44,9 +44,9 @@ ReceiverTrayPlugin::ReceiverTrayPlugin(
     flutter::PluginRegistrarWindows* registrar)
     : registrar_(registrar),
       channel_(std::make_unique<flutter::MethodChannel<>>(
-          registrar->messenger(), "tomdesk/receiver_tray",
+          registrar->messenger(), "dogshare/receiver_tray",
           &flutter::StandardMethodCodec::GetInstance())),
-      callback_message_(RegisterWindowMessageW(L"TomDeskReceiverTrayCallback")),
+      callback_message_(RegisterWindowMessageW(L"DogShareReceiverTrayCallback")),
       taskbar_created_message_(RegisterWindowMessageW(L"TaskbarCreated")) {
   delegate_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
       [this](HWND window, UINT message, WPARAM wparam, LPARAM lparam) {

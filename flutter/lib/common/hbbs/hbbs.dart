@@ -6,17 +6,17 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 
 import '../../models/platform_model.dart';
-import '../../models/tomdesk_account_gate.dart';
-import '../../models/tomdesk_role.dart';
+import '../../models/dogshare_account_gate.dart';
+import '../../models/dogshare_role.dart';
 
 Future<String> accountApiServer() async {
   final server = await bind.mainGetApiServer();
-  if (TomDeskAccountGate.isRequired) {
-    final expected = tomDeskClientRole == null
-        ? tomDeskAccountServer
-        : 'https://phenoseed.com/tomdesk-paired-account';
+  if (DogShareAccountGate.isRequired) {
+    final expected = dogShareClientRole == null
+        ? dogShareAccountServer
+        : 'https://phenoseed.com/dogshare-paired-account';
     if (server != expected) {
-      throw RequestException(0, tomDeskAccountUnavailable);
+      throw RequestException(0, dogShareAccountUnavailable);
     }
   }
   return server;
@@ -178,7 +178,7 @@ class LoginRequest {
     if (uuid != null) data['uuid'] = uuid;
     if (autoLogin != null) data['autoLogin'] = autoLogin;
     if (type != null) data['type'] = type;
-    final clientRole = tomDeskClientRole;
+    final clientRole = dogShareClientRole;
     if (clientRole != null) data['client_role'] = clientRole;
     if (verificationCode != null) {
       data['verificationCode'] = verificationCode;

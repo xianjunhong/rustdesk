@@ -1,6 +1,6 @@
 # DogShare Windows x64 构建
 
-本分支包含当前 DogShare 客户端、账号服务和构建脚本。客户端基于 RustDesk，保留原许可证及上游来源。源码目录即仓库根目录，构建入口位于 `打包/`，配套脚本位于 `tomdesk-tools/`。
+本分支包含当前 DogShare 客户端、账号服务和构建脚本。客户端基于 RustDesk，保留原许可证及上游来源。源码目录即仓库根目录，构建入口位于 `打包/`，配套脚本位于 `dogshare-tools/`。
 
 ## 本次整理的验证边界
 
@@ -18,7 +18,7 @@
 | PowerShell | 7 |
 | Python | Python 3，需安装 `brotli`；账号服务依赖见其目录 |
 
-`tomdesk-tools/native-environment.json` 是版本参考，明确标记 `reference_only`，不表示当前机器已经通过编译检查。
+`dogshare-tools/native-environment.json` 是版本参考，明确标记 `reference_only`，不表示当前机器已经通过编译检查。
 
 ## 路径与配置
 
@@ -27,11 +27,11 @@
 | 变量 | 默认值 / 用途 |
 | --- | --- |
 | `DOGSHARE_REPO` | 仓库根目录；通常无需设置 |
-| `DOGSHARE_TOOLS` | 仓库内 `tomdesk-tools`；保存随源码发布的脚本 |
+| `DOGSHARE_TOOLS` | 仓库内 `dogshare-tools`；保存随源码发布的脚本 |
 | `DOGSHARE_PYTHON` | PATH 中的 `python.exe` |
-| `DOGSHARE_SDK_ROOT` | 默认 `tomdesk-tools`；可指向单独的 SDK/缓存目录 |
+| `DOGSHARE_SDK_ROOT` | 默认 `dogshare-tools`；可指向单独的 SDK/缓存目录 |
 | `DOGSHARE_VCVARS64` | 可指定 `vcvars64.bat`；默认通过已安装 VS 或 `vswhere.exe` 查找 |
-| `DOGSHARE_ASSETS` | 默认 `tomdesk-tools/bridge-assets`；可指向已准备的官方辅助文件目录 |
+| `DOGSHARE_ASSETS` | 默认 `dogshare-tools/bridge-assets`；可指向已准备的官方辅助文件目录 |
 | `CARGO_HOME` / `RUSTUP_HOME` | 未设置时使用 SDK 根下的 `cargo` / `rustup` |
 | `VCPKG_ROOT` / `LIBCLANG_PATH` | 未设置时使用 SDK 根下的 `vcpkg` / `llvm-15.0.6/bin` |
 | `FLUTTER_ROOT` / `PUB_CACHE` | 未设置时使用 SDK 根下的 `flutter` / `pub-cache` |
@@ -53,19 +53,19 @@ SDK 根目录的默认布局：`cargo/bin`、`rustup`、`flutter/bin`、`vcpkg/i
 
 ```powershell
 python -m pip install brotli
-. .\tomdesk-tools\dogshare-env.ps1
+. .\dogshare-tools\dogshare-env.ps1
 & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
 & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows-static --x-install-root="$env:VCPKG_INSTALLED_ROOT" --disable-metrics
-& .\tomdesk-tools\cargo-task.ps1 fetch --locked
+& .\dogshare-tools\cargo-task.ps1 fetch --locked
 Push-Location .\flutter
-try { & ..\tomdesk-tools\run-flutter.ps1 pub get } finally { Pop-Location }
+try { & ..\dogshare-tools\run-flutter.ps1 pub get } finally { Pop-Location }
 ```
 
 如当前 PowerShell 已有 `CARGO_NET_OFFLINE=true`，先清除该进程变量再做首次 `cargo fetch`。不要把本机 `.env`、账号库、密钥或导出的账号清单纳入 Git。
 
 ## 桥接源码与官方辅助文件
 
-当前桥接源码已随分支保存，摘要与 `tomdesk-tools/bridge-assets/bridge-provenance.json` 一致：
+当前桥接源码已随分支保存，摘要与 `dogshare-tools/bridge-assets/bridge-provenance.json` 一致：
 
 - `src/bridge_generated.rs`、`src/bridge_generated.io.rs`
 - `flutter/lib/generated_bridge.dart`、`flutter/lib/generated_bridge.freezed.dart`
@@ -82,10 +82,10 @@ Git 中只保存辅助文件的来源和摘要，不包含其 ZIP、DLL、PDB �
 WindowInjection 可从对应官方构建 artifact 或以下交付地址取得。下载后必须校验 SHA256，再解压至 `bridge-assets/topmostwindow-artifacts-x64/`，使其中包含 `WindowInjection.dll`：
 
 ```powershell
-$assets = Join-Path $PWD 'tomdesk-tools\bridge-assets'
-python .\tomdesk-tools\download_asset.py 'https://nightly.link/rustdesk/rustdesk/actions/runs/41745328480/topmostwindow-artifacts-x64.zip' "$assets\topmostwindow-artifacts-x64.zip" --sha256 cc8da669ec28ecf6b1781e73391dcf93c03bb1f352321f16f40d7ac31d362ff7
+$assets = Join-Path $PWD 'dogshare-tools\bridge-assets'
+python .\dogshare-tools\download_asset.py 'https://nightly.link/rustdesk/rustdesk/actions/runs/41745328480/topmostwindow-artifacts-x64.zip' "$assets\topmostwindow-artifacts-x64.zip" --sha256 cc8da669ec28ecf6b1781e73391dcf93c03bb1f352321f16f40d7ac31d362ff7
 Expand-Archive -LiteralPath "$assets\topmostwindow-artifacts-x64.zip" -DestinationPath "$assets\topmostwindow-artifacts-x64"
-python .\tomdesk-tools\download_custom_engine.py
+python .\dogshare-tools\download_custom_engine.py
 ```
 
 官方 Actions artifact 可能过期；如下载地址失效，需从可信留存副本恢复匹配摘要的文件，或另行更新来源、重新构建并验收。脚本不会因下载失败而忽略哈希校验。
@@ -109,4 +109,4 @@ python .\tomdesk-tools\download_custom_engine.py
 
 ## 账号服务
 
-服务端源码、配置示例和测试位于 `tomdesk-account-server/`。配置及部署方式见该目录的 README。只保留 `.env.example`；真实环境文件、数据库、账号导出和管理员凭据不随源码发布。
+服务端源码、配置示例和测试位于 `dogshare-account-server/`。配置及部署方式见该目录的 README。只保留 `.env.example`；真实环境文件、数据库、账号导出和管理员凭据不随源码发布。

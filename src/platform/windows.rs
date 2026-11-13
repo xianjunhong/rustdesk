@@ -1626,7 +1626,7 @@ fn get_after_install(
 }
 
 pub fn install_me(options: &str, path: String, silent: bool, debug: bool) -> ResultType<()> {
-    if crate::tomdesk_role::is_split() {
+    if crate::dogshare_role::is_split() {
         bail!("DogShare A/B supports portable, signed-in user sessions only.");
     }
     // MSI and EXE installations use different registry layouts, so MSI-to-EXE upgrades are not supported.
@@ -2463,7 +2463,7 @@ pub fn elevate(arg: &str) -> ResultType<bool> {
 }
 
 pub fn run_as_system(arg: &str) -> ResultType<()> {
-    if crate::tomdesk_role::is_split() {
+    if crate::dogshare_role::is_split() {
         bail!("DogShare A/B does not support SYSTEM sessions.");
     }
     let exe = std::env::current_exe()?.to_string_lossy().to_string();
@@ -2474,7 +2474,7 @@ pub fn run_as_system(arg: &str) -> ResultType<()> {
 }
 
 pub fn elevate_or_run_as_system(is_setup: bool, is_elevate: bool, is_run_as_system: bool) {
-    if crate::tomdesk_role::is_split() {
+    if crate::dogshare_role::is_split() {
         return;
     }
     // avoid possible run recursively due to failed run.
@@ -3435,7 +3435,7 @@ copy /Y \"%RUSTDESK_OUTPUT_DIR%\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsof
 }
 
 pub fn install_service() -> bool {
-    if crate::tomdesk_role::is_split() {
+    if crate::dogshare_role::is_split() {
         return false;
     }
     log::info!("Installing service...");

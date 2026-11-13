@@ -18,8 +18,8 @@ import '../mobile/pages/server_page.dart';
 import '../mobile/widgets/android_file_transfer_setup.dart';
 import '../utils/android_documents.dart';
 import 'model.dart';
-import 'tomdesk_receiver_window.dart';
-import 'tomdesk_role.dart';
+import 'dogshare_receiver_window.dart';
+import 'dogshare_role.dart';
 
 const kLoginDialogTag = "LOGIN";
 
@@ -587,7 +587,7 @@ class ServerModel with ChangeNotifier {
         closable: false,
         onTap: () {},
         page: desktop.buildConnectionCard(client)));
-    if (!isTomDeskReceiverConnectionManager) {
+    if (!isDogShareReceiverConnectionManager) {
       Future.delayed(Duration.zero, () async {
         if (!hideCm) windowOnTop(null);
       });
@@ -766,7 +766,7 @@ class ServerModel with ChangeNotifier {
       if (index != -1) {
         _clients[index].inVoiceCall = client.inVoiceCall;
         _clients[index].incomingVoiceCall = client.incomingVoiceCall;
-        if (client.incomingVoiceCall && !isTomDeskReceiver) {
+        if (client.incomingVoiceCall && !isDogShareReceiver) {
           if (isAndroid) {
             showVoiceCallDialog(client);
           } else if (isDesktop) {

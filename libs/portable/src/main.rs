@@ -503,7 +503,7 @@ mod meta_tests {
         struct Cleanup(PathBuf);
         impl Drop for Cleanup {
             fn drop(&mut self) {
-                for file in ["TomDesk.exe", "app.so", APP_METADATA_CONFIG] {
+                for file in ["DogShare.exe", "app.so", APP_METADATA_CONFIG] {
                     let _ = fs::remove_file(self.0.join(file));
                 }
                 let _ = fs::remove_dir(&self.0);
@@ -515,13 +515,13 @@ mod meta_tests {
             .unwrap()
             .as_nanos();
         let dir = std::env::temp_dir().join(format!(
-            "tomdesk-cache-guard-{}-{unique}",
+            "dogshare-cache-guard-{}-{unique}",
             std::process::id()
         ));
         fs::create_dir(&dir).unwrap();
         let cleanup = Cleanup(dir);
         let dir = &cleanup.0;
-        let exe = dir.join("TomDesk.exe");
+        let exe = dir.join("DogShare.exe");
         let data = dir.join("app.so");
         fs::write(&exe, b"old executable").unwrap();
         fs::write(&data, b"old application data").unwrap();
@@ -541,7 +541,7 @@ mod meta_tests {
             &*Box::leak(digest.into_bytes().into_boxed_slice()) as &'static [u8]
         };
         let mut reader = BinaryReader {
-            exe: "TomDesk.exe".to_owned(),
+            exe: "DogShare.exe".to_owned(),
             files: vec![
                 BinaryData {
                     md5_code: record(b"old application data"),
@@ -551,7 +551,7 @@ mod meta_tests {
                 BinaryData {
                     md5_code: record(b"old executable"),
                     raw: b"",
-                    path: "TomDesk.exe".to_owned(),
+                    path: "DogShare.exe".to_owned(),
                 },
             ],
             package_paths: Vec::new(),

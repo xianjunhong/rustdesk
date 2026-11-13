@@ -747,8 +747,8 @@ pub fn session_close_terminal(session_id: SessionID, terminal_id: i32) {
 
 pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
-        if name == crate::tomdesk_subtitle::BRIDGE_COMMAND {
-            session.send_tomdesk_subtitle(&value);
+        if name == crate::dogshare_subtitle::BRIDGE_COMMAND {
+            session.send_dogshare_subtitle(&value);
             return;
         }
         session.set_option(name, value);
@@ -1213,7 +1213,7 @@ pub fn main_discover() {
 
 pub fn main_get_api_server() -> String {
     #[cfg(windows)]
-    return crate::tomdesk_account::API_SERVER.to_owned();
+    return crate::dogshare_account::API_SERVER.to_owned();
     #[cfg(not(windows))]
     get_api_server()
 }
@@ -2560,11 +2560,11 @@ pub fn main_support_remove_wallpaper() -> bool {
 }
 
 pub fn is_incoming_only() -> SyncReturn<bool> {
-    SyncReturn(crate::tomdesk_role::is_incoming_only())
+    SyncReturn(crate::dogshare_role::is_incoming_only())
 }
 
 pub fn is_outgoing_only() -> SyncReturn<bool> {
-    SyncReturn(crate::tomdesk_role::is_outgoing_only())
+    SyncReturn(crate::dogshare_role::is_outgoing_only())
 }
 
 pub fn is_custom_client() -> SyncReturn<bool> {

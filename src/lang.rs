@@ -256,7 +256,7 @@ pub fn translate_locale(name: String, locale: &str) -> String {
     };
     let (name, placeholder_value) = extract_placeholder(&name);
     let replace = |s: &&str| {
-        let mut s = s.replace("TomDesk", &crate::get_display_app_name());
+        let mut s = s.replace("DogShare", &crate::get_display_app_name());
         if let Some(value) = placeholder_value.as_ref() {
             s = s.replace("{}", &value);
         }

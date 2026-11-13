@@ -22,7 +22,7 @@ import 'package:bot_toast/bot_toast.dart';
 
 import '../../common/widgets/dialog.dart';
 import '../../models/platform_model.dart';
-import '../../models/tomdesk_role.dart';
+import '../../models/dogshare_role.dart';
 
 class _MenuTheme {
   static const Color blueColor = MyTheme.button;
@@ -141,7 +141,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _RelativeMouseModeHint(tabController: tabController),
-            if (!isTomDeskController) const AddButton(),
+            if (!isDogShareController) const AddButton(),
           ],
         ),
         selectedBorderColor: MyTheme.accent,

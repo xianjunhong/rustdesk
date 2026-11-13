@@ -25,7 +25,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import '../../common.dart';
 import '../../models/platform_model.dart';
-import '../../models/tomdesk_account_gate.dart';
+import '../../models/dogshare_account_gate.dart';
 
 class PeerTabPage extends StatefulWidget {
   const PeerTabPage({Key? key}) : super(key: key);
@@ -568,7 +568,7 @@ class _PeerTabPageState extends State<PeerTabPage>
   }
 
   bool _showWebConsole(PeerTabModel model) =>
-      !TomDeskAccountGate.isRequired &&
+      !DogShareAccountGate.isRequired &&
       model.currentTab == PeerTabIndex.ab.index &&
       gFFI.userModel.isLogin &&
       !gFFI.abModel.legacyMode.value &&

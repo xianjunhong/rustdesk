@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $workspace = Split-Path -Parent $PSScriptRoot
 if (-not $Repo) { $Repo = $workspace }
-if (-not $Tools) { $Tools = Join-Path $workspace 'tomdesk-tools' }
+if (-not $Tools) { $Tools = Join-Path $workspace 'dogshare-tools' }
 if (-not $Python) { $Python = (Get-Command python.exe -ErrorAction Stop).Source }
 $env:DOGSHARE_REPO = $Repo
 $env:DOGSHARE_TOOLS = $Tools
@@ -87,7 +87,7 @@ function Get-Backend {
     }
 
     $snapshot = Get-BackendSnapshot
-    $features = "flutter,hwcodec,tomdesk-$Role"
+    $features = "flutter,hwcodec,dogshare-$Role"
     Invoke-BuildStep -Title "编译 $Role Rust 后端" -Program $pwsh -Directory $Repo -LogName "rust-$Role.log" -ShowStatus:($Action -eq 'backend') -RoleLabel $roleLabel -SessionClock $backendClock -Arguments @(
         '-NoLogo', '-NoProfile', '-File', (Join-Path $Tools 'cargo-task.ps1'),
         'build', '--locked', '--offline', '--release', '--lib', '--features', $features
@@ -119,7 +119,7 @@ try {
         (Join-Path $Tools 'native-env.cmd'), (Join-Path $Tools 'native-environment.json'),
         (Join-Path $Tools 'dogshare-env.ps1'),
         (Join-Path $Tools 'cargo-task.ps1'), (Join-Path $Tools 'run-flutter.ps1'),
-        (Join-Path $Tools 'package-tomdesk.ps1'), (Join-Path $Tools 'verify_tomdesk_role.py'),
+        (Join-Path $Tools 'package-dogshare.ps1'), (Join-Path $Tools 'verify_dogshare_role.py'),
         (Join-Path $Tools 'verify-live-portable.py'), (Join-Path $Tools 'Logout-DogShare-B.template.cmd')
     )) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "文件不存在：$file" }
@@ -173,8 +173,8 @@ try {
         $flutter = Join-Path $Repo 'flutter'
         Invoke-BuildStep -Title '界面回归测试' -Program $pwsh -Directory $flutter -LogName 'flutter-tests.log' -Arguments @(
             '-NoLogo', '-NoProfile', '-File', (Join-Path $Tools 'run-flutter.ps1'),
-            'test', '--no-pub', 'test/tomdesk_controller_login_test.dart',
-            'test/tomdesk_receiver_window_test.dart', 'test/tomdesk_receiver_cm_window_test.dart'
+            'test', '--no-pub', 'test/dogshare_controller_login_test.dart',
+            'test/dogshare_receiver_window_test.dart', 'test/dogshare_receiver_cm_window_test.dart'
         )
         Invoke-BuildStep -Title '编译 Windows 界面' -Program $pwsh -Directory $flutter -LogName 'flutter-build.log' -Arguments @(
             '-NoLogo', '-NoProfile', '-File', (Join-Path $Tools 'run-flutter.ps1'), 'build', 'windows', '--release', '--no-pub'
@@ -183,15 +183,15 @@ try {
         $name = if ($role -eq 'receiver') { 'DogShare-Receiver.exe' } else { 'DogShare-Control.exe' }
         $dist = Join-Path $outputRoot (($name -replace '\.exe$', '') + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
         if (Test-Path -LiteralPath $dist) { throw "输出目录已存在：$dist" }
-        $env:TOMDESK_PORTABLE_NAME = $name
-        $env:TOMDESK_DIST_ROOT = $dist
-        $command = "cargo build --locked --offline --release --lib --features flutter,hwcodec,tomdesk-$role"
+        $env:DOGSHARE_PORTABLE_NAME = $name
+        $env:DOGSHARE_DIST_ROOT = $dist
+        $command = "cargo build --locked --offline --release --lib --features flutter,hwcodec,dogshare-$role"
         Invoke-BuildStep -Title '生成便携 EXE' -Program $pwsh -Directory $Repo -LogName 'package.log' -Arguments @(
-            '-NoLogo', '-NoProfile', '-File', (Join-Path $Tools 'package-tomdesk.ps1'),
+            '-NoLogo', '-NoProfile', '-File', (Join-Path $Tools 'package-dogshare.ps1'),
             '-Mode', 'package', '-BuildCommand', $command, '-BackendCache', $cache
         )
         Invoke-BuildStep -Title '校验程序角色' -Program $Python -Directory $Repo -LogName 'verify-role.log' -Arguments @(
-            '-B', (Join-Path $Tools 'verify_tomdesk_role.py'), $role, '--dist', $dist, '--live-subtitles'
+            '-B', (Join-Path $Tools 'verify_dogshare_role.py'), $role, '--dist', $dist, '--live-subtitles'
         )
         Invoke-BuildStep -Title '校验便携包完整性' -Program $Python -Directory $Repo -LogName 'verify-portable.log' -Arguments @(
             '-B', (Join-Path $Tools 'verify-live-portable.py'), $dist, $name

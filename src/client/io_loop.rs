@@ -8,7 +8,7 @@ use crate::{
         QualityStatus, MILLI1, SEC30,
     },
     common::get_default_sound_input,
-    tomdesk_account::PairActivation,
+    dogshare_account::PairActivation,
     ui_session_interface::{InvokeUiSession, Session},
 };
 
@@ -839,7 +839,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         self.initial_clipboard_pending = false;
                     }
                     Some(message::Union::Misc(misc)) => match misc.union {
-                        Some(misc::Union::TomdeskSubtitle(_)) if !self.is_connected => {
+                        Some(misc::Union::DogshareSubtitle(_)) if !self.is_connected => {
                             return true;
                         }
                         Some(misc::Union::Option(ref option)) => {
@@ -1712,7 +1712,7 @@ impl<T: InvokeUiSession> Remote<T> {
             match msg_in.union {
                 Some(message::Union::VideoFrame(vf)) => {
                     // A frame used for activation must come after the accepted login.
-                    if crate::tomdesk_role::is_controller() && !self.is_connected {
+                    if crate::dogshare_role::is_controller() && !self.is_connected {
                         return true;
                     }
                     if !self.first_frame {
@@ -2484,7 +2484,7 @@ impl<T: InvokeUiSession> Remote<T> {
                             .write()
                             .unwrap()
                             .consume_switch_back_permission();
-                        if allow_switch_back && !crate::tomdesk_role::is_split() {
+                        if allow_switch_back && !crate::dogshare_role::is_split() {
                             self.handler.switch_back(&self.handler.get_id());
                         } else {
                             log::warn!(

@@ -21,8 +21,8 @@ import '../common/widgets/overlay.dart';
 import '../main.dart';
 import 'model.dart';
 import 'text_overlay_model.dart';
-import 'tomdesk_role.dart';
-import 'tomdesk_subtitle_frame.dart';
+import 'dogshare_role.dart';
+import 'dogshare_subtitle_frame.dart';
 
 class MessageKey {
   final String peerId;
@@ -104,15 +104,15 @@ class ChatModel with ChangeNotifier {
   MessageKey _currentKey = MessageKey('', -2); // -2 is invalid value
   late bool _isShowCMSidePage = false;
   final _pairedSubtitleConnections = <int>{};
-  TomDeskSubtitleDraft? _subtitleDraft;
+  DogShareSubtitleDraft? _subtitleDraft;
 
-  TomDeskSubtitleDraft get subtitleDraft => _subtitleDraft ??=
-      TomDeskSubtitleDraft(sessionId: sessionId, input: textController);
+  DogShareSubtitleDraft get subtitleDraft => _subtitleDraft ??=
+      DogShareSubtitleDraft(sessionId: sessionId, input: textController);
 
   bool get supportsOutgoingSubtitles =>
       currentKey.isOut &&
       parent.target?.connType == ConnType.defaultConn &&
-      isTomDeskController;
+      isDogShareController;
 
   bool get subtitleInputComposing =>
       _subtitleDraft?.enabled == true &&
@@ -147,6 +147,34 @@ class ChatModel with ChangeNotifier {
     sessionId = parent.target!.sessionId;
     inputNode = FocusNode(
       onKey: (_, event) {
+        if (supportsOutgoingSubtitles) {
+          if (event.logicalKey != LogicalKeyboardKey.enter &&
+              event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+            return KeyEventResult.ignored;
+          }
+          final value = textController.value;
+          if (value.isComposingRangeValid && !value.composing.isCollapsed) {
+            return KeyEventResult.ignored;
+          }
+          if (event is! RawKeyDownEvent) return KeyEventResult.handled;
+          if (event.isShiftPressed) {
+            final selection = value.selection;
+            final start = selection.isValid
+                ? selection.start.clamp(0, value.text.length).toInt()
+                : value.text.length;
+            final end = selection.isValid
+                ? selection.end.clamp(0, value.text.length).toInt()
+                : value.text.length;
+            textController.value = value.copyWith(
+              text: value.text.replaceRange(start, end, '\n'),
+              selection: TextSelection.collapsed(offset: start + 1),
+              composing: TextRange.empty,
+            );
+          } else {
+            sendDraft();
+          }
+          return KeyEventResult.handled;
+        }
         bool isShiftPressed = event.isKeyPressed(LogicalKeyboardKey.shiftLeft);
         bool isEnterPressed = event.isKeyPressed(LogicalKeyboardKey.enter);
 
@@ -173,6 +201,14 @@ class ChatModel with ChangeNotifier {
         return KeyEventResult.ignored;
       },
     );
+  }
+
+  void sendDraft() {
+    final value = textController.value;
+    if (value.text.trim().isEmpty ||
+        (value.isComposingRangeValid && !value.composing.isCollapsed)) return;
+    send(ChatMessage(text: value.text, user: me, createdAt: DateTime.now()));
+    textController.clear();
   }
 
   void clearDraft() {
@@ -429,14 +465,14 @@ class ChatModel with ChangeNotifier {
   }
 
   void receiveRemoteSubtitle(Map<String, dynamic> event) {
-    if (!isTomDeskReceiver || desktopType != DesktopType.cm) return;
+    if (!isDogShareReceiver || desktopType != DesktopType.cm) return;
     final id = int.tryParse(event['id']?.toString() ?? '');
     final payload = event['frame'];
     if (id == null || payload is! String) return;
     final client = parent.target?.serverModel.clients
         .firstWhereOrNull((c) => c.id == id && c.authorized && !c.disconnected);
     if (client == null) return;
-    final frame = TomDeskSubtitleFrame.tryDecode(payload);
+    final frame = DogShareSubtitleFrame.tryDecode(payload);
     if (frame == null) return;
     _setPairedSubtitleMode(id, frame.enabled);
     unawaited(TextOverlayModel.instance.receiveRemoteSubtitle(
@@ -454,7 +490,7 @@ class ChatModel with ChangeNotifier {
     if (text.isEmpty) return;
     final subtitleOnly = _pairedSubtitleConnections.contains(id) ||
         (isWindows &&
-            !isTomDeskReceiver &&
+            !isDogShareReceiver &&
             desktopType == DesktopType.cm &&
             session.serverModel.clients.any((client) =>
                 client.id == id &&
@@ -547,7 +583,7 @@ class ChatModel with ChangeNotifier {
       _currentKey = messagekey;
       mobileClearClientUnread(messagekey.connId);
     }
-    if (isWindows && !isTomDeskReceiver) {
+    if (isWindows && !isDogShareReceiver) {
       unawaited(TextOverlayModel.instance.receive(
           source: textOverlaySource(messagekey), text: text, label: peerId));
     }

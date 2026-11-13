@@ -17,11 +17,12 @@ import '../../common/widgets/toolbar.dart';
 import '../../models/model.dart';
 import '../../models/input_model.dart';
 import '../../models/platform_model.dart';
+import '../../models/dogshare_role.dart';
 import '../../models/shortcut_model.dart';
 import '../../common/shared_state.dart';
 import '../../utils/image.dart';
 import '../widgets/remote_toolbar.dart';
-import '../widgets/tomdesk_subtitle_panel.dart';
+import '../widgets/dogshare_subtitle_panel.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 import '../widgets/tabbar_widget.dart';
 import 'macos_full_screen_focus_recovery.dart';
@@ -295,7 +296,7 @@ class _RemotePageState extends State<RemotePage>
   bool get _windowsCanFocusRemoteInput =>
       _isSelectedTab &&
       _blockableOverlayState.middleBlocked.isFalse &&
-      !_ffi.dialogManager.existing(tomDeskSubtitleDialogTag);
+      !_ffi.dialogManager.existing(dogShareSubtitleDialogTag);
 
   bool get _isMacOSKeyboardContextActive {
     return stateGlobal.isFocused.value && !_isWindowBlur && _isSelectedTab;
@@ -1126,6 +1127,9 @@ class _ImagePaintState extends State<ImagePaint> {
     final s = c.scale;
     // Read the live DPR while the canvas's post-frame update is pending.
     final dpr = MediaQuery.devicePixelRatioOf(context);
+    final showLocalBrowseCursor = isDogShareController &&
+        widget.ffi.connType == ConnType.defaultConn &&
+        context.select<FfiModel, bool>((model) => model.viewOnly);
 
     bool isViewOriginal() => c.viewStyle.style == kRemoteViewStyleOriginal;
 
@@ -1139,6 +1143,15 @@ class _ImagePaintState extends State<ImagePaint> {
             }
           }
 
+          if (showLocalBrowseCursor) {
+            return MouseRegion(
+              cursor: cursorOverImage.isTrue
+                  ? SystemMouseCursors.basic
+                  : MouseCursor.defer,
+              onHover: (evt) {},
+              child: child,
+            );
+          }
           return MouseRegion(
               cursor: cursorOverImage.isTrue
                   ? c.cursorEmbedded

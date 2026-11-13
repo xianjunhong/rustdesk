@@ -12,29 +12,29 @@ import '../common.dart';
 import '../utils/http_service.dart' as http;
 import 'model.dart';
 import 'platform_model.dart';
-import 'tomdesk_account_gate.dart';
-import 'tomdesk_role.dart';
+import 'dogshare_account_gate.dart';
+import 'dogshare_role.dart';
 import 'text_overlay_model.dart';
 
 bool refreshingUser = false;
 
 typedef _PairedDevice = ({String? targetId, bool? online});
 
-const _tomDeskDeviceBound =
+const _dogShareDeviceBound =
     'This computer is bound to another account. Sign in with that account or contact your administrator.';
-const _tomDeskPairExpired =
+const _dogSharePairExpired =
     'This account pair has expired. Ask your administrator to renew it.';
-const _tomDeskLoginRateLimited =
+const _dogShareLoginRateLimited =
     'Too many sign-in attempts. Try again later.';
 
-String tomDeskLoginErrorText(String cause) {
+String dogShareLoginErrorText(String cause) {
   final chinese = switch (cause) {
-    _tomDeskDeviceBound => (
+    _dogShareDeviceBound => (
         '本机已绑定其他账号。请用原账号登录，或联系管理员。',
         '本機已綁定其他帳號。請使用原帳號登入，或聯絡管理員。',
       ),
-    _tomDeskPairExpired => ('此账号配对已过期，请联系管理员续期。', '此帳號配對已過期，請聯絡管理員續期。'),
-    _tomDeskLoginRateLimited => ('登录尝试过多，请稍后再试。', '登入嘗試過多，請稍後再試。'),
+    _dogSharePairExpired => ('此账号配对已过期，请联系管理员续期。', '此帳號配對已過期，請聯絡管理員續期。'),
+    _dogShareLoginRateLimited => ('登录尝试过多，请稍后再试。', '登入嘗試過多，請稍後再試。'),
     _ => null,
   };
   if (chinese == null) return translate(cause);
@@ -62,8 +62,8 @@ class UserModel {
   // True when networkError carries a server-reported error rather than a
   // connectivity failure; netWorkErrorWidget hides the network tip then.
   final RxBool networkErrorFromServer = false.obs;
-  bool get isLogin => TomDeskAccountGate.isRequired
-      ? TomDeskAccountGate.instance.authorized : userName.isNotEmpty;
+  bool get isLogin => DogShareAccountGate.isRequired
+      ? DogShareAccountGate.instance.authorized : userName.isNotEmpty;
   String get displayNameOrUserName =>
       displayName.value.trim().isEmpty ? userName.value : displayName.value;
   String get accountLabelWithHandle {
@@ -90,8 +90,8 @@ class UserModel {
     });
   }
 
-  void updateTomDeskAccount() {
-    final account = TomDeskAccountGate.instance;
+  void updateDogShareAccount() {
+    final account = DogShareAccountGate.instance;
     if (account.authorized && account.user != null) {
       _parseAndUpdateUser(UserPayload.fromJson(account.user!));
       networkError.value = '';
@@ -101,13 +101,13 @@ class UserModel {
       avatar.value = '';
       isAdmin.value = false;
       networkError.value = account.error.isEmpty
-          ? tomDeskSignInRequired : account.error;
+          ? dogShareSignInRequired : account.error;
     }
   }
 
   void refreshCurrentUser() async {
-    if (TomDeskAccountGate.isRequired) {
-      await TomDeskAccountGate.instance.refresh();
+    if (DogShareAccountGate.isRequired) {
+      await DogShareAccountGate.instance.refresh();
       return;
     }
     if (bind.isDisableAccount()) return;
@@ -195,8 +195,8 @@ class UserModel {
   }
 
   Future<void> reset({bool resetOther = false}) async {
-    if (TomDeskAccountGate.isRequired) {
-      TomDeskAccountGate.instance.invalidate();
+    if (DogShareAccountGate.isRequired) {
+      DogShareAccountGate.instance.invalidate();
       final overlay = TextOverlayModel.instance;
       final source = overlay.source;
       if (source != null) await overlay.disable(source);
@@ -210,9 +210,9 @@ class UserModel {
     userName.value = '';
     displayName.value = '';
     avatar.value = '';
-    if (TomDeskAccountGate.isRequired &&
+    if (DogShareAccountGate.isRequired &&
         bind.mainGetLocalOption(key: 'access_token').isNotEmpty) {
-      throw StateError(tomDeskCredentialClearFailed);
+      throw StateError(dogShareCredentialClearFailed);
     }
   }
 
@@ -230,14 +230,14 @@ class UserModel {
 
   // update ab and group status
   static Future<void> updateOtherModels() async {
-    if (TomDeskAccountGate.isRequired) return;
+    if (DogShareAccountGate.isRequired) return;
     await Future.wait([
       gFFI.abModel.pullAb(force: ForcePullAb.listAndCurrent, quiet: false),
       gFFI.groupModel.pull()
     ]);
   }
 
-  Future<account_http.Response> _postTomDeskAccount(
+  Future<account_http.Response> _postDogShareAccount(
       String endpoint, Map<String, dynamic> body, {String? token}) async {
     final client = account_http.Client();
     try {
@@ -253,7 +253,7 @@ class UserModel {
           .then(account_http.Response.fromStream)
           .timeout(const Duration(seconds: 8));
     } catch (_) {
-      throw RequestException(0, tomDeskAccountUnavailable);
+      throw RequestException(0, dogShareAccountUnavailable);
     } finally {
       client.close();
     }
@@ -263,17 +263,17 @@ class UserModel {
   String? _pairedDeviceRequestToken;
 
   Future<String?> pairedDevice() async {
-    if (!isTomDeskController) {
-      throw RequestException(403, tomDeskRoleMismatch);
+    if (!isDogShareController) {
+      throw RequestException(403, dogShareRoleMismatch);
     }
-    if (!await TomDeskAccountGate.instance.refresh()) {
-      throw RequestException(401, tomDeskSignInRequired);
+    if (!await DogShareAccountGate.instance.refresh()) {
+      throw RequestException(401, dogShareSignInRequired);
     }
     return (await _lookupPairedDevice()).targetId;
   }
 
   Future<bool?> pairedDeviceOnline() async {
-    if (!isTomDeskController || !isLogin) return null;
+    if (!isDogShareController || !isLogin) return null;
     return (await _lookupPairedDevice()).online;
   }
 
@@ -283,7 +283,7 @@ class UserModel {
   Future<_PairedDevice> _lookupPairedDevice() async {
     final token = bind.mainGetLocalOption(key: 'access_token');
     if (!isLogin || token.isEmpty) {
-      throw RequestException(401, tomDeskSignInRequired);
+      throw RequestException(401, dogShareSignInRequired);
     }
     // Opening a connection can use a lookup already in flight for this login.
     // A later connection attempt still performs a fresh lookup.
@@ -308,23 +308,23 @@ class UserModel {
     final id = await bind.mainGetMyId();
     final uuid = await bind.mainGetUuid();
     if (!_isCurrentPairedDeviceToken(token)) {
-      throw RequestException(401, tomDeskSignInRequired);
+      throw RequestException(401, dogShareSignInRequired);
     }
-    final response = await _postTomDeskAccount('tomdesk/paired-device', {
+    final response = await _postDogShareAccount('dogshare/paired-device', {
       'id': id,
       'uuid': uuid,
     }, token: token);
     if (!_isCurrentPairedDeviceToken(token)) {
-      throw RequestException(401, tomDeskSignInRequired);
+      throw RequestException(401, dogShareSignInRequired);
     }
     try {
       final body = jsonDecode(utf8.decode(response.bodyBytes));
       if (body is! Map) throw const FormatException();
       if (response.statusCode != 200) {
         final message = body['code'] == 'pair_required' || body['code'] == 'pair_disabled'
-            ? tomDeskPairUnavailable
+            ? dogSharePairUnavailable
             : body['code'] == 'role_mismatch'
-                ? tomDeskRoleMismatch : tomDeskAccountUnavailable;
+                ? dogShareRoleMismatch : dogShareAccountUnavailable;
         throw RequestException(response.statusCode, message);
       }
       if (!body.containsKey('target_id')) throw const FormatException();
@@ -337,35 +337,29 @@ class UserModel {
     } on RequestException {
       rethrow;
     } catch (_) {
-      throw RequestException(0, tomDeskAccountUnavailable);
+      throw RequestException(0, dogShareAccountUnavailable);
     }
   }
 
-  Future<LoginResponse> _loginTomDesk(LoginRequest request) async {
-    final clientRole = tomDeskClientRole;
-    final previousToken = clientRole == null
-        ? ''
-        : bind.mainGetLocalOption(key: 'access_token');
-    // The server can use a still-valid session on this exact device as proof
-    // that the current account is authorized to release its binding.
-    final response = await _postTomDeskAccount(
+  Future<LoginResponse> _loginDogShare(LoginRequest request) async {
+    final clientRole = dogShareClientRole;
+    final response = await _postDogShareAccount(
       'login',
       request.toJson(),
-      token: previousToken.isEmpty ? null : previousToken,
     );
     if (response.statusCode != 200) {
-      var message = tomDeskAccountUnavailable;
+      var message = dogShareAccountUnavailable;
       try {
         final error = jsonDecode(utf8.decode(response.bodyBytes));
         final code = error is Map ? error['code'] : null;
         message = switch (code) {
-          'role_mismatch' => tomDeskRoleMismatch,
-          'pair_required' || 'pair_disabled' => tomDeskPairUnavailable,
+          'role_mismatch' => dogShareRoleMismatch,
+          'pair_required' || 'pair_disabled' => dogSharePairUnavailable,
           'invalid_credentials' => 'Wrong credentials',
-          'device_bound' => _tomDeskDeviceBound,
-          'pair_expired' => _tomDeskPairExpired,
-          'rate_limited' => _tomDeskLoginRateLimited,
-          _ => tomDeskAccountUnavailable,
+          'device_bound' => _dogShareDeviceBound,
+          'pair_expired' => _dogSharePairExpired,
+          'rate_limited' => _dogShareLoginRateLimited,
+          _ => dogShareAccountUnavailable,
         };
       } catch (_) {}
       throw RequestException(response.statusCode, message);
@@ -381,18 +375,18 @@ class UserModel {
         throw const FormatException();
       }
       if (clientRole != null && result.user!.role != clientRole) {
-        throw RequestException(403, tomDeskRoleMismatch);
+        throw RequestException(403, dogShareRoleMismatch);
       }
       return result;
     } on RequestException {
       rethrow;
     } catch (_) {
       // Parsing exceptions can contain response fragments, including tokens.
-      throw RequestException(0, tomDeskAccountUnavailable);
+      throw RequestException(0, dogShareAccountUnavailable);
     }
   }
 
-  Future<void> _logOutTomDesk() async {
+  Future<void> _logOutDogShare() async {
     final token = bind.mainGetLocalOption(key: 'access_token');
     var storageFailed = false;
     try {
@@ -401,7 +395,7 @@ class UserModel {
       storageFailed = true;
     }
     try {
-      await _postTomDeskAccount('logout', {
+      await _postDogShareAccount('logout', {
         'id': await bind.mainGetMyId(),
         'uuid': await bind.mainGetUuid(),
       }, token: token);
@@ -409,14 +403,14 @@ class UserModel {
       // Local invalidation takes effect even when the server is unreachable.
     }
     if (storageFailed) {
-      networkError.value = tomDeskCredentialClearFailed;
-      BotToast.showText(text: translate(tomDeskCredentialClearFailed));
+      networkError.value = dogShareCredentialClearFailed;
+      BotToast.showText(text: translate(dogShareCredentialClearFailed));
     }
   }
 
   Future<void> logOut({String? apiServer}) async {
-    if (TomDeskAccountGate.isRequired) {
-      await _logOutTomDesk();
+    if (DogShareAccountGate.isRequired) {
+      await _logOutDogShare();
       return;
     }
     final tag = gFFI.dialogManager.showLoading(translate('Waiting'));
@@ -442,7 +436,7 @@ class UserModel {
 
   /// throw [RequestException]
   Future<LoginResponse> login(LoginRequest loginRequest) async {
-    if (TomDeskAccountGate.isRequired) return _loginTomDesk(loginRequest);
+    if (DogShareAccountGate.isRequired) return _loginDogShare(loginRequest);
     final url = await accountApiServer();
     final resp = await http.post(Uri.parse('$url/api/login'),
         body: jsonEncode(loginRequest.toJson()));
@@ -479,7 +473,7 @@ class UserModel {
 
     final isLogInDone = loginResponse.type == HttpType.kAuthResTypeToken &&
         loginResponse.access_token != null;
-    if (!TomDeskAccountGate.isRequired &&
+    if (!DogShareAccountGate.isRequired &&
         isLogInDone && loginResponse.user != null) {
       _parseAndUpdateUser(loginResponse.user!);
     }
@@ -491,7 +485,7 @@ class UserModel {
   /// data. Returns an empty list when no API server is configured or a
   /// successful response contains no third-party login options.
   static Future<List<dynamic>> queryOidcLoginOptions() async {
-    if (TomDeskAccountGate.isRequired) return [];
+    if (DogShareAccountGate.isRequired) return [];
     final url = await accountApiServer();
     if (url.trim().isEmpty) return [];
     final resp = await http.get(Uri.parse('$url/api/login-options'));

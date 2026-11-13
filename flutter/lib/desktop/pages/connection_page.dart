@@ -20,7 +20,7 @@ import '../../common/widgets/peer_tab_page.dart';
 import '../../common/widgets/autocomplete.dart';
 import '../../common/widgets/request_approval_menu.dart';
 import '../../models/platform_model.dart';
-import '../../models/tomdesk_role.dart';
+import '../../models/dogshare_role.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
 
 class OnlineStatusWidget extends StatefulWidget {
@@ -157,7 +157,7 @@ class _OnlineStatusWidgetState extends State<OnlineStatusWidget> {
 
   _buildConnStatusMsg() {
     widget.onSvcStatusChanged?.call();
-    if (isTomDeskReceiver && !_svcStopped.value &&
+    if (isDogShareReceiver && !_svcStopped.value &&
         gFFI.userModel.userName.value.isNotEmpty && gFFI.userModel.isLogin &&
         stateGlobal.svcStatus.value == SvcStatus.ready) {
       return Text(translate(stateGlobal.videoConnCount.value > 0
@@ -567,8 +567,8 @@ class _ConnectionPageState extends State<ConnectionPage>
                     child: Text(translate("Connect")),
                   ),
                 ),
-                if (!isTomDeskController) const SizedBox(width: 8),
-                if (!isTomDeskController) Container(
+                if (!isDogShareController) const SizedBox(width: 8),
+                if (!isDogShareController) Container(
                   height: 28.0,
                   width: 28.0,
                   decoration: BoxDecoration(

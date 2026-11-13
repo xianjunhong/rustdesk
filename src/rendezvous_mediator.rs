@@ -282,7 +282,7 @@ impl RendezvousMediator {
 
     pub async fn start_all() {
         crate::test_nat_type();
-        if crate::tomdesk_role::is_outgoing_only() {
+        if crate::dogshare_role::is_outgoing_only() {
             loop {
                 sleep(1.).await;
             }

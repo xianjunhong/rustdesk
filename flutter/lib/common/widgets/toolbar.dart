@@ -11,7 +11,7 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
-import 'package:flutter_hbb/models/tomdesk_role.dart';
+import 'package:flutter_hbb/models/dogshare_role.dart';
 import 'package:flutter_hbb/models/shortcut_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:get/get.dart';
@@ -590,7 +590,7 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
         connToken: connToken);
   }
 
-  if (isDefaultConn && isDesktop && tomDeskClientRole == null) {
+  if (isDefaultConn && isDesktop && dogShareClientRole == null) {
     v.add(
       TTextMenu(
           child: Text(translate('Transfer file')),
@@ -693,7 +693,7 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
         actionId: kShortcutActionToggleBlockInput));
   }
   // switchSides
-  if (tomDeskClientRole == null && isDefaultConn &&
+  if (dogShareClientRole == null && isDefaultConn &&
       isDesktop &&
       ffiModel.keyboard &&
       pi.platform != kPeerPlatformAndroid &&

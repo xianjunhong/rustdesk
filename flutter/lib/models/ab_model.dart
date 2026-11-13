@@ -8,7 +8,7 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
-import 'tomdesk_account_gate.dart';
+import 'dogshare_account_gate.dart';
 import 'package:get/get.dart';
 import 'package:bot_toast/bot_toast.dart';
 
@@ -120,7 +120,7 @@ class AbModel {
   var _pulling = false;
   Future<void> pullAb(
       {required ForcePullAb? force, required bool quiet}) async {
-    if (TomDeskAccountGate.isRequired) return;
+    if (DogShareAccountGate.isRequired) return;
     if (bind.isDisableAb()) return;
     if (!gFFI.userModel.isLogin) return;
     if (gFFI.userModel.networkError.isNotEmpty) return;
@@ -362,7 +362,7 @@ class AbModel {
 
 // #region rule
   List<String> addressBooksCanWrite() {
-    if (TomDeskAccountGate.isRequired) return [];
+    if (DogShareAccountGate.isRequired) return [];
     List<String> list = [];
     addressbooks.forEach((key, value) async {
       if (value.canWrite()) {

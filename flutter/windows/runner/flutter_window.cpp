@@ -137,7 +137,7 @@ bool FlutterWindow::OnCreate() {
     &flutter::StandardMethodCodec::GetInstance());
 
   flutter::MethodChannel<> receiver_window_channel(
-      flutter_controller_->engine()->messenger(), "tomdesk/receiver_window",
+      flutter_controller_->engine()->messenger(), "dogshare/receiver_window",
       &flutter::StandardMethodCodec::GetInstance());
   receiver_window_channel.SetMethodCallHandler(
       [this](const auto& call, auto result) {

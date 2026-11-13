@@ -1,0 +1,44 @@
+services:
+  accounts:
+    build: .
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: "1.0"
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+    ports:
+      - "127.0.0.1:${DOGSHARE_ACCOUNT_PUBLISH_PORT:-8091}:8091"
+    environment:
+      DOGSHARE_ACCOUNT_DB: /data/accounts.sqlite3
+      DOGSHARE_SESSION_TTL_SECONDS: "${DOGSHARE_SESSION_TTL_SECONDS:-43200}"
+      DOGSHARE_REMEMBER_TTL_SECONDS: "${DOGSHARE_REMEMBER_TTL_SECONDS:-604800}"
+      DOGSHARE_TICKET_TTL_SECONDS: "${DOGSHARE_TICKET_TTL_SECONDS:-300}"
+      DOGSHARE_LOGIN_WINDOW_SECONDS: "${DOGSHARE_LOGIN_WINDOW_SECONDS:-60}"
+      DOGSHARE_LOGIN_IP_LIMIT: "${DOGSHARE_LOGIN_IP_LIMIT:-30}"
+      DOGSHARE_LOGIN_ACCOUNT_LIMIT: "${DOGSHARE_LOGIN_ACCOUNT_LIMIT:-10}"
+      DOGSHARE_HASH_CONCURRENCY: "${DOGSHARE_HASH_CONCURRENCY:-2}"
+      DOGSHARE_PUBLIC_DOCS: "0"
+      DOGSHARE_ADMIN_ORIGIN: "${DOGSHARE_ADMIN_ORIGIN:-}"
+      DOGSHARE_ADMIN_PATH: "${DOGSHARE_ADMIN_PATH:-/admin}"
+      DOGSHARE_ADMIN_SESSION_TTL_SECONDS: "${DOGSHARE_ADMIN_SESSION_TTL_SECONDS:-3600}"
+      DOGSHARE_TRUSTED_PROXY_IPS: "${DOGSHARE_TRUSTED_PROXY_IPS:-}"
+    volumes:
+      - accounts-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  accounts-data:

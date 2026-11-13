@@ -13,7 +13,7 @@ import '../../common.dart';
 import '../../common/formatter/id_formatter.dart';
 import '../../models/peer_model.dart';
 import '../../models/platform_model.dart';
-import '../../models/tomdesk_role.dart';
+import '../../models/dogshare_role.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
 import '../../desktop/widgets/popup_menu.dart';
 import 'request_approval_menu.dart';
@@ -577,7 +577,7 @@ abstract class BasePeerCard extends StatelessWidget {
   @protected
   Future<List<MenuEntryBase<String>>> _buildConnectionMenuItems(
       BuildContext context) async {
-    if (isTomDeskController) return [_connectAction(context)];
+    if (isDogShareController) return [_connectAction(context)];
     final List<MenuEntryBase<String>> menuItems = [
       _connectAction(context),
       _transferFileAction(context),

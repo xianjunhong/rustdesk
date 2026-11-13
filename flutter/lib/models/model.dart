@@ -43,7 +43,7 @@ import '../utils/image.dart' as img;
 import '../common/widgets/dialog.dart';
 import 'input_model.dart';
 import 'platform_model.dart';
-import 'tomdesk_role.dart';
+import 'dogshare_role.dart';
 import 'package:flutter_hbb/utils/scale.dart';
 
 import 'package:flutter_hbb/generated_bridge.dart'
@@ -366,7 +366,7 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'chat_server_mode') {
         parent.target?.chatModel
             .receive(int.parse(evt['id'] as String), evt['text'] ?? '');
-      } else if (name == 'tomdesk_subtitle') {
+      } else if (name == 'dogshare_subtitle') {
         parent.target?.chatModel.receiveRemoteSubtitle(evt);
       } else if (name == 'terminal_response') {
         parent.target?.routeTerminalResponse(evt);
@@ -929,7 +929,7 @@ class FfiModel with ChangeNotifier {
             (type == 'custom-nocancel-success' &&
                 title == 'Successful' &&
                 text == 'Elevate successfully')) &&
-        isTomDeskController) {
+        isDogShareController) {
       return;
     }
 
@@ -1485,6 +1485,7 @@ class FfiModel with ChangeNotifier {
       parent.target?.elevationModel.onPeerInfo(_pi);
     }
     if (connType == ConnType.defaultConn) {
+      await initializeDogShareConnectionViewMode(sessionId, isCache: isCache);
       setViewOnly(
           peerId,
           bind.sessionGetToggleOptionSync(
@@ -2402,9 +2403,16 @@ class CanvasModel with ChangeNotifier {
   updateSize() => _size = getSize();
 
   updateViewStyle({refreshMousePos = true, notify = true}) async {
-    final style = await bind.sessionGetViewStyle(sessionId: sessionId);
+    var style = await bind.sessionGetViewStyle(sessionId: sessionId);
     if (style == null) {
       return;
+    }
+    if (isDogShareController &&
+        parent.target?.connType == ConnType.defaultConn &&
+        style != kRemoteViewStyleAdaptive) {
+      await bind.sessionSetViewStyle(
+          sessionId: sessionId, value: kRemoteViewStyleAdaptive);
+      style = kRemoteViewStyleAdaptive;
     }
 
     updateSize();
@@ -4027,7 +4035,7 @@ class ElevationModel with ChangeNotifier {
   ElevationModel(this.parent);
   bool _running = false;
   bool _canElevate = false;
-  bool get showRequestMenu => _canElevate && !_running && !isTomDeskController;
+  bool get showRequestMenu => _canElevate && !_running && !isDogShareController;
   onPeerInfo(PeerInfo pi) {
     _canElevate = pi.platform == kPeerPlatformWindows && pi.sasEnabled == false;
     _running = false;

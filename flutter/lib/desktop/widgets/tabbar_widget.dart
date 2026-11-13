@@ -13,8 +13,8 @@ import 'package:flutter_hbb/desktop/pages/view_camera_page.dart';
 import 'package:flutter_hbb/main.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
-import 'package:flutter_hbb/models/tomdesk_receiver_window.dart';
-import 'package:flutter_hbb/models/tomdesk_role.dart';
+import 'package:flutter_hbb/models/dogshare_receiver_window.dart';
+import 'package:flutter_hbb/models/dogshare_role.dart';
 import 'package:get/get.dart';
 import 'package:get/get_rx/src/rx_workers/utils/debouncer.dart';
 import 'package:scroll_pos/scroll_pos.dart';
@@ -390,8 +390,8 @@ class _DesktopTabState extends State<DesktopTab>
   void onWindowMinimize() {
     stateGlobal.setMinimized(true);
     stateGlobal.setMaximized(false);
-    if (tabType == DesktopTabType.main && isWindows && isTomDeskReceiver) {
-      unawaited(hideTomDeskReceiverWindow(alreadyMinimized: true));
+    if (tabType == DesktopTabType.main && isWindows && isDogShareReceiver) {
+      unawaited(hideDogShareReceiverWindow(alreadyMinimized: true));
     }
     super.onWindowMinimize();
   }
@@ -480,10 +480,10 @@ class _DesktopTabState extends State<DesktopTab>
     if (await _isLinuxWindowClosed()) return;
 
     await _saveFrame(flush: true);
-    if (isMainWindow && isWindows && isTomDeskReceiver) {
+    if (isMainWindow && isWindows && isDogShareReceiver) {
       // Keep the main window registered: removing the last active window
       // runs the ordinary application's shutdown path.
-      await hideTomDeskReceiverWindow();
+      await hideDogShareReceiverWindow();
       return;
     }
 
@@ -796,13 +796,13 @@ class WindowActionPanelState extends State<WindowActionPanel> {
                   icon: IconFont.min,
                   onTap: () {
                     if (widget.tabController.tabType == DesktopTabType.cm &&
-                        isTomDeskReceiverConnectionManager) {
-                      unawaited(minimizeTomDeskReceiverConnectionDetails());
+                        isDogShareReceiverConnectionManager) {
+                      unawaited(minimizeDogShareReceiverConnectionDetails());
                     } else if (widget.isMainWindow) {
                       if (widget.tabController.tabType == DesktopTabType.main &&
                           isWindows &&
-                          isTomDeskReceiver) {
-                        unawaited(hideTomDeskReceiverWindow());
+                          isDogShareReceiver) {
+                        unawaited(hideDogShareReceiverWindow());
                       } else {
                         windowManager.minimize();
                       }

@@ -361,7 +361,7 @@ pub enum Data {
     ChatMessage {
         text: String,
     },
-    TomDeskSubtitle {
+    DogShareSubtitle {
         frame: String,
     },
     SwitchPermission {

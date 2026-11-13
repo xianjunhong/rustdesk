@@ -1,11 +1,11 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/models/text_overlay_model.dart';
-import 'package:flutter_hbb/models/tomdesk_subtitle_frame.dart';
+import 'package:flutter_hbb/models/dogshare_subtitle_frame.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const channel = MethodChannel('tomdesk/text_overlay');
+  const channel = MethodChannel('dogshare/text_overlay');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   final model = TextOverlayModel.instance;
@@ -88,8 +88,8 @@ void main() {
   });
 
   test('paired frames replace styled subtitles and clear the card', () async {
-    TomDeskSubtitleFrame frame(String text, {bool enabled = true}) =>
-        TomDeskSubtitleFrame(
+    DogShareSubtitleFrame frame(String text, {bool enabled = true}) =>
+        DogShareSubtitleFrame(
           enabled: enabled,
           text: text,
           fontSize: 96,

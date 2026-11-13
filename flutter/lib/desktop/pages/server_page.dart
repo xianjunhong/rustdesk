@@ -21,8 +21,8 @@ import '../../common/widgets/chat_page.dart';
 import '../../models/file_model.dart';
 import '../../models/platform_model.dart';
 import '../../models/server_model.dart';
-import '../../models/tomdesk_receiver_window.dart';
-import '../../models/tomdesk_role.dart';
+import '../../models/dogshare_receiver_window.dart';
+import '../../models/dogshare_role.dart';
 
 /// Set only by this window's own close control, and only once the user has confirmed. Any other
 /// way the window can go - a session logout closing every window, the window manager, a native
@@ -337,8 +337,8 @@ class ConnectionManagerState extends State<ConnectionManager>
   }
 
   Future<bool> handleWindowCloseButton() async {
-    if (isTomDeskReceiverConnectionManager) {
-      await minimizeTomDeskReceiverConnectionDetails();
+    if (isDogShareReceiverConnectionManager) {
+      await minimizeDogShareReceiverConnectionDetails();
       return false; // The title bar must not also close the window.
     }
     var tabController = gFFI.serverModel.tabController;
@@ -374,7 +374,7 @@ Widget buildConnectionCard(Client client) {
       key: ValueKey(client.id),
       children: [
         _CmHeader(client: client),
-        isTomDeskReceiver ||
+        isDogShareReceiver ||
                 client.type_() == ClientType.file ||
                 client.type_() == ClientType.portForward ||
                 client.type_() == ClientType.terminal ||
@@ -501,7 +501,7 @@ class _CmHeaderState extends State<_CmHeader>
                   ),
                   maxLines: 1,
                 )),
-                if (!isTomDeskReceiver) FittedBox(
+                if (!isDogShareReceiver) FittedBox(
                   child: Text(
                     "(${client.peerId})",
                     style: TextStyle(color: Colors.white, fontSize: 14),
@@ -544,7 +544,7 @@ class _CmHeaderState extends State<_CmHeader>
                           ? client.disconnected
                               ? translate("Disconnected")
                               : translate("Connected")
-                          : isTomDeskReceiver ? translate('Waiting')
+                          : isDogShareReceiver ? translate('Waiting')
                               : "${translate("Request access to your device")}...",
                       style: TextStyle(color: Colors.white),
                     ).marginOnly(right: 8.0),
@@ -880,7 +880,7 @@ class _CmControlPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isTomDeskReceiver) {
+    if (isDogShareReceiver) {
       if (client.disconnected) return buildDisconnected(context);
       return Column(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -892,7 +892,7 @@ class _CmControlPanel extends StatelessWidget {
               child: Semantics(
                 liveRegion: true,
                 child: Text(
-                  tomDeskReceiverVoiceActiveText,
+                  dogShareReceiverVoiceActiveText,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

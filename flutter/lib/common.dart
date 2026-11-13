@@ -40,8 +40,8 @@ import 'desktop/pages/view_camera_page.dart' as desktop_view_camera;
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
-import 'models/tomdesk_account_gate.dart';
-import 'models/tomdesk_role.dart';
+import 'models/dogshare_account_gate.dart';
+import 'models/dogshare_role.dart';
 
 import 'package:flutter_hbb/native/win32.dart'
     if (dart.library.html) 'package:flutter_hbb/web/win32.dart';
@@ -2559,14 +2559,14 @@ connectMainDesktop(String id,
     String? connToken,
     bool? isSharedPassword,
     String loginMethod = ''}) async {
-  if (isTomDeskReceiver || (isTomDeskController &&
+  if (isDogShareReceiver || (isDogShareController &&
       (isFileTransfer || isViewCamera || isTerminal || isTcpTunneling || isRDP))) {
     showToast(translate('Unsupported'));
     return;
   }
-  if (TomDeskAccountGate.isRequired &&
-      !await TomDeskAccountGate.instance.refresh()) {
-    showToast(translate(tomDeskSignInRequired));
+  if (DogShareAccountGate.isRequired &&
+      !await DogShareAccountGate.instance.refresh()) {
+    showToast(translate(dogShareSignInRequired));
     return;
   }
   if (isFileTransfer) {
@@ -3073,8 +3073,8 @@ int versionCmp(String v1, String v2) {
 }
 
 String getWindowName({WindowType? overrideType}) {
-  final name = isTomDeskReceiver ? translate('TomDesk receiver')
-      : isTomDeskController ? translate('TomDesk controller')
+  final name = isDogShareReceiver ? translate('DogShare receiver')
+      : isDogShareController ? translate('DogShare controller')
       : bind.mainGetAppNameSync();
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
@@ -3352,7 +3352,7 @@ Widget buildErrorBanner(BuildContext context,
 }
 
 String getDesktopTabLabel(String peerId, String alias) {
-  if (tomDeskClientRole != null) return translate('Paired device');
+  if (dogShareClientRole != null) return translate('Paired device');
   String label = alias.isEmpty ? peerId : alias;
   try {
     String peer = bind.mainGetPeerSync(id: peerId);
@@ -3672,7 +3672,7 @@ Future<bool> setServerConfig(
     }
   }
   // api
-  if (!TomDeskAccountGate.isRequired &&
+  if (!DogShareAccountGate.isRequired &&
       config.apiServer.isNotEmpty && errMsgs != null) {
     if (!config.apiServer.startsWith('http://') &&
         !config.apiServer.startsWith('https://')) {
@@ -3687,7 +3687,7 @@ Future<bool> setServerConfig(
   await bind.mainSetOption(
       key: 'custom-rendezvous-server', value: config.idServer);
   await bind.mainSetOption(key: 'relay-server', value: config.relayServer);
-  if (!TomDeskAccountGate.isRequired) {
+  if (!DogShareAccountGate.isRequired) {
     await bind.mainSetOption(key: 'api-server', value: config.apiServer);
   }
   await bind.mainSetOption(key: 'key', value: config.key);
@@ -3892,7 +3892,7 @@ Widget loadIcon(double size) {
 
 var imcomingOnlyHomeSize = Size(280, 300);
 Size getIncomingOnlyHomeSize() {
-  if (isTomDeskReceiver) return const Size(560, 600);
+  if (isDogShareReceiver) return const Size(560, 600);
   final magicWidth = isWindows ? 11.0 : 2.0;
   final magicHeight = 10.0;
   return imcomingOnlyHomeSize +

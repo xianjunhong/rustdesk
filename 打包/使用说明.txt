@@ -7,9 +7,9 @@ DogShare Windows x64 构建入口
 支持 --check（只检查入口文件路径）和 --no-pause。
 --check 不代表 SDK、依赖或完整编译已经通过；首次构建先读 docs/DOGSHARE_BUILD.md。
 
-源码默认为本目录的上级，脚本在 tomdesk-tools。
+源码默认为本目录的上级，脚本在 dogshare-tools。
 可通过 DOGSHARE_REPO、DOGSHARE_TOOLS、DOGSHARE_PYTHON 覆盖。
-SDK/依赖缓存默认放在 tomdesk-tools；可用 DOGSHARE_SDK_ROOT 指向已有工具目录。
+SDK/依赖缓存默认放在 dogshare-tools；可用 DOGSHARE_SDK_ROOT 指向已有工具目录。
 本仓库不包含 SDK、编译缓存、已编译的 DLL 或 EXE。
 
 产物：打包/输出；日志：打包/日志；角色后端缓存：打包/Rust后端。

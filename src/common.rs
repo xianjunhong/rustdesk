@@ -789,8 +789,8 @@ async fn test_nat_type_() -> ResultType<bool> {
 }
 
 pub async fn get_rendezvous_server(ms_timeout: u64) -> (String, Vec<String>, bool) {
-    if crate::tomdesk_role::is_split() {
-        return (crate::tomdesk_role::ID_SERVER.to_owned(), Vec::new(), true);
+    if crate::dogshare_role::is_split() {
+        return (crate::dogshare_role::ID_SERVER.to_owned(), Vec::new(), true);
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let (mut a, mut b) = get_rendezvous_server_(ms_timeout);
@@ -1220,7 +1220,7 @@ pub fn get_app_name() -> String {
 #[inline]
 pub fn get_display_app_name() -> String {
     let name = get_app_name();
-    if name == "TomDesk" {
+    if name == "DogShare" {
         "DogShare".to_owned()
     } else {
         name
@@ -1251,8 +1251,8 @@ pub fn is_setup(name: &str) -> bool {
 }
 
 pub fn get_custom_rendezvous_server(custom: String) -> String {
-    if crate::tomdesk_role::is_split() {
-        return crate::tomdesk_role::ID_SERVER.to_owned();
+    if crate::dogshare_role::is_split() {
+        return crate::dogshare_role::ID_SERVER.to_owned();
     }
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
@@ -1358,7 +1358,7 @@ pub fn get_webrtc_enabled() -> bool {
 pub fn get_local_option(key: &str) -> String {
     #[cfg(windows)]
     if key == "access_token" {
-        return crate::tomdesk_credentials::read_access_token();
+        return crate::dogshare_credentials::read_access_token();
     }
     let v = LocalConfig::get_option(key);
     if key == keys::OPTION_ENABLE_UDP_PUNCH
@@ -2163,8 +2163,8 @@ pub fn decode64<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, base64::DecodeError
 }
 
 pub async fn get_key(sync: bool) -> String {
-    if crate::tomdesk_role::is_split() {
-        return crate::tomdesk_role::SERVER_KEY.to_owned();
+    if crate::dogshare_role::is_split() {
+        return crate::dogshare_role::SERVER_KEY.to_owned();
     }
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
@@ -2519,7 +2519,7 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 pub fn load_custom_client() {
     #[cfg(target_os = "windows")]
     {
-        *config::APP_NAME.write().unwrap() = "TomDesk".to_owned();
+        *config::APP_NAME.write().unwrap() = "DogShare".to_owned();
     }
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {

@@ -6,7 +6,7 @@
 namespace receiver_window {
 namespace {
 
-constexpr wchar_t kWindowProperty[] = L"TomDeskReceiverWindowRelaunchV1";
+constexpr wchar_t kWindowProperty[] = L"DogShareReceiverWindowRelaunchV1";
 constexpr ULONG_PTR kUnpackedMarker = 1;
 constexpr DWORD kLauncherCapacity = 256;
 constexpr DWORD kPathCapacity = 32768;

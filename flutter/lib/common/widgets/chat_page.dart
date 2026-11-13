@@ -5,10 +5,11 @@ import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
-import '../../desktop/widgets/tomdesk_subtitle_panel.dart';
+import '../../desktop/widgets/dogshare_subtitle_panel.dart';
 import '../../mobile/pages/home_page.dart';
 import 'text_overlay_controls.dart';
-import '../../models/tomdesk_role.dart';
+import 'dogshare_chat_composer.dart';
+import '../../models/dogshare_role.dart';
 
 enum ChatPageType {
   mobileMain,
@@ -206,17 +207,37 @@ class ChatPage extends StatelessWidget implements PageShape {
                         );
                       },
                     ),
-                  ).workaroundFreezeLinuxMint();
-                  return SelectionArea(child: chat);
+                  );
+                  if (pairedComposer) {
+                    return Column(children: [
+                      Expanded(
+                        child: SelectionArea(
+                          child: MessageList(
+                            currentUser: chat.currentUser,
+                            messages: chat.messages,
+                            readOnly: chat.readOnly,
+                            messageOptions: chat.messageOptions,
+                            messageListOptions: chat.messageListOptions,
+                            quickReplyOptions: chat.quickReplyOptions,
+                            scrollToBottomOptions: chat.scrollToBottomOptions,
+                            typingUsers: chat.typingUsers,
+                          ),
+                        ),
+                      ),
+                      if (!readOnly)
+                        DogShareChatComposer(chatModel: chatModel),
+                    ]);
+                  }
+                  return SelectionArea(child: chat.workaroundFreezeLinuxMint());
                 }),
               ],
             ).paddingOnly(bottom: 8);
             if (!isWindows) return chatPage;
-            final role = tomDeskClientRole;
+            final role = dogShareClientRole;
             final session = chatModel.parent.target;
             if (session != null && chatModel.supportsOutgoingSubtitles) {
               return Column(children: [
-                TomDeskSubtitleChatControls(
+                DogShareSubtitleChatControls(
                     ffi: session, draft: chatModel.subtitleDraft),
                 Expanded(child: chatPage),
               ]);

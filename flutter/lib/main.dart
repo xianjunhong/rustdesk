@@ -29,8 +29,8 @@ import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
 import 'mobile/widgets/deploy_dialog.dart';
 import 'models/platform_model.dart';
-import 'models/tomdesk_account_gate.dart';
-import 'models/tomdesk_receiver_window.dart';
+import 'models/dogshare_account_gate.dart';
+import 'models/dogshare_receiver_window.dart';
 
 /// Basic window and launch properties.
 int? kWindowId;
@@ -126,9 +126,9 @@ Future<void> initEnv(String appType) async {
   // for convenience, use global FFI on mobile platform
   // focus on multi-ffi on desktop first
   await initGlobalFFI();
-  if (TomDeskAccountGate.isRequired) {
-    TomDeskAccountGate.instance.addListener(gFFI.userModel.updateTomDeskAccount);
-    TomDeskAccountGate.instance.initialize();
+  if (DogShareAccountGate.isRequired) {
+    DogShareAccountGate.instance.addListener(gFFI.userModel.updateDogShareAccount);
+    DogShareAccountGate.instance.initialize();
   }
   // await Firebase.initializeApp();
   _registerEventHandler();
@@ -295,7 +295,7 @@ void runConnectionManagerScreen() async {
     const DesktopServerPage(),
     MyTheme.currentThemeMode(),
   );
-  final hide = !isTomDeskReceiverConnectionManager &&
+  final hide = !isDogShareReceiverConnectionManager &&
       await bind.cmGetConfig(name: "hide_cm") == 'true';
   gFFI.serverModel.hideCm = hide;
   if (hide) {
@@ -336,19 +336,19 @@ Future<void> _showReceiverCm({required bool isStartup}) async {
   // active client presents the window; later events leave its state alone.
   _receiverCmPresented = true;
   try {
-    if (!await showTomDeskReceiverConnectionMinimized() &&
+    if (!await showDogShareReceiverConnectionMinimized() &&
         _receiverCmPresented) {
       // Keep the local disconnect control reachable without a taskbar entry.
       await windowManager.show(inactive: true);
     }
   } catch (error) {
     _receiverCmPresented = false;
-    debugPrint('Unable to present TomDesk connection details: $error');
+    debugPrint('Unable to present DogShare connection details: $error');
   }
 }
 
 showCmWindow({bool isStartup = false}) async {
-  if (isTomDeskReceiverConnectionManager) {
+  if (isDogShareReceiverConnectionManager) {
     await _showReceiverCm(isStartup: isStartup);
     return;
   }
@@ -379,7 +379,7 @@ showCmWindow({bool isStartup = false}) async {
 }
 
 hideCmWindow({bool isStartup = false}) async {
-  if (isTomDeskReceiverConnectionManager) {
+  if (isDogShareReceiverConnectionManager) {
     if (!_receiverCmPresented) return;
     _receiverCmPresented = false;
     await windowManager.hide();

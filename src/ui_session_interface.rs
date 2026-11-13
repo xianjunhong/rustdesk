@@ -800,9 +800,9 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     #[cfg(feature = "flutter")]
-    pub fn send_tomdesk_subtitle(&self, frame: &str) {
-        if crate::tomdesk_role::is_controller() && self.is_default() {
-            if let Some(message) = crate::tomdesk_subtitle::from_ui_json(frame) {
+    pub fn send_dogshare_subtitle(&self, frame: &str) {
+        if crate::dogshare_role::is_controller() && self.is_default() {
+            if let Some(message) = crate::dogshare_subtitle::from_ui_json(frame) {
                 self.send(Data::Message(message));
             }
         }
@@ -1527,7 +1527,7 @@ impl<T: InvokeUiSession> Session<T> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     #[tokio::main(flavor = "current_thread")]
     pub async fn switch_sides(&self) {
-        if crate::tomdesk_role::is_split() {
+        if crate::dogshare_role::is_split() {
             self.on_error("Switching sides is unavailable in DogShare A/B.");
             return;
         }

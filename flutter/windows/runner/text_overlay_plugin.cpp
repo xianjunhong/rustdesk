@@ -8,8 +8,8 @@
 #include <cstdint>
 
 namespace {
-constexpr wchar_t kClassName[] = L"TomDeskTextOverlay";
-constexpr wchar_t kDragClassName[] = L"TomDeskSubtitleDrag";
+constexpr wchar_t kClassName[] = L"DogShareTextOverlay";
+constexpr wchar_t kDragClassName[] = L"DogShareSubtitleDrag";
 constexpr UINT kTextFlags = DT_WORDBREAK | DT_NOPREFIX | DT_EXPANDTABS;
 constexpr UINT_PTR kAccountTimer = 1;
 constexpr BYTE kArmedDragAlpha = 1;
@@ -21,7 +21,7 @@ bool AccountAllowsOverlay() {
   using Check = bool (*)();
   auto module = GetModuleHandleW(L"librustdesk.dll");
   auto check = module ? reinterpret_cast<Check>(
-      GetProcAddress(module, "tomdesk_account_overlay_allowed")) : nullptr;
+      GetProcAddress(module, "dogshare_account_overlay_allowed")) : nullptr;
   return check && check();
 }
 constexpr int kPadding = 12;
@@ -107,7 +107,7 @@ void TextOverlayPlugin::RegisterWithRegistrar(
 
 TextOverlayPlugin::TextOverlayPlugin(flutter::BinaryMessenger* messenger)
     : channel_(std::make_unique<flutter::MethodChannel<>>(
-          messenger, "tomdesk/text_overlay",
+          messenger, "dogshare/text_overlay",
           &flutter::StandardMethodCodec::GetInstance())) {
   channel_->SetMethodCallHandler(
       [this](const auto& call, auto result) { HandleMethod(call, std::move(result)); });
@@ -551,7 +551,7 @@ LRESULT CALLBACK TextOverlayPlugin::WindowProc(
       SetWindowPos(window, nullptr, rect->left, rect->top, rect->right - rect->left,
                     rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE |
                         (self->dragging_card_ ? SWP_NOMOVE : 0));
-      if (!self->UpdateFont()) OutputDebugStringW(L"TomDesk: subtitle font update failed.\n");
+      if (!self->UpdateFont()) OutputDebugStringW(L"DogShare: subtitle font update failed.\n");
       self->Layout(false);
       return 0;
     }

@@ -387,12 +387,12 @@ impl Client {
         ),
         (i32, String),
     )> {
-        crate::tomdesk_role::require_outgoing(conn_type)?;
+        crate::dogshare_role::require_outgoing(conn_type)?;
         debug_assert!(peer == interface.get_id());
         #[cfg(windows)]
         let token = {
             let _ = token;
-            crate::tomdesk_account::require_connection(peer, conn_type).await?;
+            crate::dogshare_account::require_connection(peer, conn_type).await?;
             ""
         };
         interface.update_direct(None);
@@ -440,7 +440,7 @@ impl Client {
         (i32, String),
         bool,
     )> {
-        if crate::tomdesk_role::is_incoming_only() && !is_switch_sides_back(conn_type, &interface).await {
+        if crate::dogshare_role::is_incoming_only() && !is_switch_sides_back(conn_type, &interface).await {
             bail!("Incoming only mode");
         }
         // to-do: remember the port for each peer, so that we can retry easier
@@ -4666,7 +4666,7 @@ pub async fn handle_hash(
     #[cfg(feature = "flutter")]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        if crate::tomdesk_role::is_split() && lc.read().unwrap().switch_uuid.is_some() {
+        if crate::dogshare_role::is_split() && lc.read().unwrap().switch_uuid.is_some() {
             interface.on_error("Switching sides is unavailable in DogShare A/B.");
             return false;
         }
@@ -4698,7 +4698,7 @@ pub async fn handle_hash(
         }
         // Incoming-only may connect out solely for a verified switch-back;
         // never fall through to password login, including on repeated hashes.
-        if crate::tomdesk_role::is_incoming_only() {
+        if crate::dogshare_role::is_incoming_only() {
             interface.msgbox("error", "Connection Error", "Incoming only mode", "");
             let mut misc = Misc::new();
             misc.set_close_reason(
@@ -4710,7 +4710,7 @@ pub async fn handle_hash(
             return false;
         }
     }
-    if crate::tomdesk_role::is_controller() {
+    if crate::dogshare_role::is_controller() {
         if let Err(error) = send_login(
             lc.clone(),
             String::new(),
@@ -4836,7 +4836,7 @@ pub async fn handle_hash(
 #[inline]
 fn try_get_password_from_personal_ab(lc: Arc<RwLock<LoginConfigHandler>>, password: &mut Vec<u8>) {
     #[cfg(windows)]
-    let access_token = crate::tomdesk_credentials::read_access_token();
+    let access_token = crate::dogshare_credentials::read_access_token();
     #[cfg(not(windows))]
     let access_token = LocalConfig::get_option("access_token");
     let ab = config::Ab::load();
@@ -4890,7 +4890,7 @@ async fn send_login(
         .unwrap()
         .create_login_msg(os_username, os_password, password);
     #[cfg(windows)]
-    let pair_activation = crate::tomdesk_account::prepare_login(msg_out.mut_login_request(), true).await?;
+    let pair_activation = crate::dogshare_account::prepare_login(msg_out.mut_login_request(), true).await?;
     let msg_out = trust.login(msg_out).await?;
     peer.send(&msg_out).await?;
     #[cfg(windows)]
@@ -4964,7 +4964,7 @@ async fn send_switch_login_request(
         .create_login_msg("".to_owned(), "".to_owned(), vec![])
         .login_request().to_owned();
     #[cfg(windows)]
-    let _ = crate::tomdesk_account::prepare_login(&mut login, false).await?;
+    let _ = crate::dogshare_account::prepare_login(&mut login, false).await?;
     let mut msg_out = Message::new();
     msg_out.set_switch_sides_response(SwitchSidesResponse {
         uuid: Bytes::from(uuid.as_bytes().to_vec()),
