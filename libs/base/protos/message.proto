@@ -58,7 +58,9 @@ message FileTransfer {
   bool show_hidden = 2;
 }
 
-message ViewCamera {}
+message ViewCamera {
+  bytes dogshare_parent_proof = 1;
+}
 
 message OSLogin {
   string username = 1;
@@ -138,6 +140,7 @@ message PeerInfo {
   // NOTE: Only support one-level dictionaries (for peer to update), and the key is of type string.
   string platform_additions = 12;
   WindowsSessions windows_sessions = 13;
+  bytes dogshare_camera_key = 14;
 }
 
 message WindowsSession {  
@@ -334,6 +337,7 @@ message CursorPosition {
 message Hash {
   string salt = 1;
   string challenge = 2;
+  bytes dogshare_camera_challenge = 3;
 }
 
 enum ClipboardFormat {

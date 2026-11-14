@@ -392,7 +392,13 @@ impl Client {
         #[cfg(windows)]
         let token = {
             let _ = token;
-            crate::dogshare_account::require_connection(peer, conn_type).await?;
+            if crate::dogshare_role::is_controller() && conn_type == ConnType::VIEW_CAMERA {
+                if interface.get_lch().read().unwrap().dogshare_camera_key.is_none() {
+                    bail!(crate::dogshare_camera::NEED_PARENT);
+                }
+            } else {
+                crate::dogshare_account::require_connection(peer, conn_type).await?;
+            }
             ""
         };
         interface.update_direct(None);
@@ -2839,6 +2845,8 @@ struct ConnToken {
 pub struct LoginConfigHandler {
     id: String,
     pub conn_type: ConnType,
+    #[cfg(windows)]
+    pub(crate) dogshare_camera_key: Option<crate::dogshare_camera::Key>,
     pub is_terminal_admin: bool,
     hash: Hash,
     password: Vec<u8>, // remember password for reconnect
@@ -3885,7 +3893,18 @@ impl LoginConfigHandler {
                 show_hidden: !self.get_option("remote_show_hidden").is_empty(),
                 ..Default::default()
             }),
-            ConnType::VIEW_CAMERA => lr.set_view_camera(Default::default()),
+            ConnType::VIEW_CAMERA => {
+                #[cfg(windows)]
+                let dogshare_parent_proof = self.dogshare_camera_key.as_ref().map_or_else(
+                    Bytes::new,
+                    |key| crate::dogshare_camera::proof(key, &self.hash.dogshare_camera_challenge),
+                );
+                lr.set_view_camera(ViewCamera {
+                    #[cfg(windows)]
+                    dogshare_parent_proof,
+                    ..Default::default()
+                });
+            }
             ConnType::PORT_FORWARD | ConnType::RDP => lr.set_port_forward(PortForward {
                 host: self.port_forward.0.clone(),
                 port: self.port_forward.1,
@@ -4890,7 +4909,17 @@ async fn send_login(
         .unwrap()
         .create_login_msg(os_username, os_password, password);
     #[cfg(windows)]
-    let pair_activation = crate::dogshare_account::prepare_login(msg_out.mut_login_request(), true).await?;
+    let pair_activation = if crate::dogshare_role::is_controller()
+        && msg_out.login_request().has_view_camera()
+    {
+        if !peer.is_secured() || !crate::dogshare_camera::has_proof(msg_out.login_request()) {
+            bail!(crate::dogshare_camera::NEED_PARENT);
+        }
+        msg_out.mut_login_request().password.clear();
+        None
+    } else {
+        crate::dogshare_account::prepare_login(msg_out.mut_login_request(), true).await?
+    };
     let msg_out = trust.login(msg_out).await?;
     peer.send(&msg_out).await?;
     #[cfg(windows)]

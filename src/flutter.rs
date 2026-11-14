@@ -1356,6 +1356,16 @@ pub fn session_add(
         bail!("same session id is found");
     }
 
+    #[cfg(windows)]
+    let (conn_token, camera_key) = if crate::dogshare_role::is_controller()
+        && conn_type == ConnType::VIEW_CAMERA
+    {
+        // Flutter subwindows share the native session registry. Pass only the desktop's ID.
+        (None, crate::dogshare_camera::resolve_desktop_key(id, conn_token.as_deref()))
+    } else {
+        (conn_token, None)
+    };
+
     LocalConfig::set_remote_id(&id);
 
     let mut preset_password = password.clone();
@@ -1392,6 +1402,10 @@ pub fn session_add(
         conn_token,
         login_method,
     );
+    #[cfg(windows)]
+    if let Some(key) = camera_key {
+        session.lc.write().unwrap().dogshare_camera_key = Some(key);
+    }
 
     let session = Arc::new(session.clone());
     sessions::insert_session(session_id.to_owned(), conn_type, session.clone());

@@ -44,6 +44,7 @@ pub mod flutter_ffi;
 use common::*;
 mod auth_2fa;
 mod dogshare_account;
+mod dogshare_camera;
 mod dogshare_credentials;
 mod dogshare_role;
 mod dogshare_subtitle;

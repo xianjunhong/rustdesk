@@ -214,6 +214,15 @@ impl<T: InvokeUiSession> Remote<T> {
                     .unwrap()
                     .set_connected();
                 let is_secured = peer.is_secured();
+                #[cfg(windows)]
+                if crate::dogshare_role::is_controller()
+                    && self.handler.is_view_camera()
+                    && !is_secured
+                {
+                    self.handler.on_error(crate::dogshare_camera::NEED_PARENT);
+                    self.handle_disconnected(round);
+                    return;
+                }
                 let trust = crate::trusted_devices::client::Session::new(
                     &self.handler.lc.read().unwrap(),
                     is_secured,
@@ -482,6 +491,12 @@ impl<T: InvokeUiSession> Remote<T> {
             .lock()
             .unwrap()
             .set_disconnected(round);
+
+        #[cfg(windows)]
+        if self.handler.is_default() && _set_disconnected_ok && crate::dogshare_role::is_controller()
+        {
+            self.handler.lc.write().unwrap().dogshare_camera_key = None;
+        }
 
         #[cfg(not(target_os = "ios"))]
         if self.handler.is_default() && _set_disconnected_ok {
@@ -1775,7 +1790,8 @@ impl<T: InvokeUiSession> Remote<T> {
                             return false;
                         }
                     }
-                    Some(login_response::Union::PeerInfo(pi)) => {
+                    Some(login_response::Union::PeerInfo(mut pi)) => {
+                        crate::dogshare_camera::take_controller_key(&self.handler, peer, &mut pi);
                         #[cfg(windows)]
                         if !self.is_connected {
                             self.pair_activation = self.trusted_device.pair_activation.take().map(PairActivation::new);

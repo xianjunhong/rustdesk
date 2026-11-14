@@ -445,6 +445,15 @@ void showWaylandKeyboardInputWarningDialog(
   unawaited(dialogFuture.whenComplete(() => dialogClosed = true));
 }
 
+void connectToCamera(BuildContext context, String id, FFI ffi) {
+  connect(context, id,
+      loginMethod: bind.sessionGetCommonSync(
+              sessionId: ffi.sessionId, key: 'login_method', param: '') ??
+          '',
+      isViewCamera: true,
+      connToken: bind.sessionGetConnToken(sessionId: ffi.sessionId));
+}
+
 List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
   final ffiModel = ffi.ffiModel;
   final pi = ffiModel.pi;
@@ -575,7 +584,6 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
   // Does not work for connection established by "accept".
   connectWithToken(
       {bool isFileTransfer = false,
-      bool isViewCamera = false,
       bool isTcpTunneling = false,
       bool isTerminal = false}) {
     final connToken = bind.sessionGetConnToken(sessionId: ffi.sessionId);
@@ -584,7 +592,6 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
                 sessionId: ffi.sessionId, key: 'login_method', param: '') ??
             '',
         isFileTransfer: isFileTransfer,
-        isViewCamera: isViewCamera,
         isTerminal: isTerminal,
         isTcpTunneling: isTcpTunneling,
         connToken: connToken);
@@ -599,7 +606,7 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
     v.add(
       TTextMenu(
           child: Text(translate('View camera')),
-          onPressed: () => connectWithToken(isViewCamera: true)),
+          onPressed: () => connectToCamera(context, id, ffi)),
     );
     v.add(
       TTextMenu(

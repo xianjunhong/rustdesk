@@ -98,11 +98,16 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
             body: DesktopTab(
               controller: tabController,
               tail: Offstage(
-                offstage: dogShareClientRole != null || bind.isIncomingOnly() || bind.isDisableSettings(),
+                offstage: bind.isDisableSettings() ||
+                    (!isDogShareReceiver &&
+                        (isDogShareController || bind.isIncomingOnly())),
                 child: ActionIcon(
                   message: 'Settings',
                   icon: IconFont.menu,
-                  onTap: DesktopTabPage.onAddSetting,
+                  onTap: () => DesktopTabPage.onAddSetting(
+                      initialPage: isDogShareReceiver
+                          ? SettingsTabKey.safety
+                          : SettingsTabKey.general),
                   isClose: false,
                 ),
               ),

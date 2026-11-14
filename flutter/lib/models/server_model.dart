@@ -598,8 +598,10 @@ class ServerModel with ChangeNotifier {
         });
       }
     }
-    parent.target?.chatModel
-        .updateConnIdOfKey(MessageKey(client.peerId, client.id));
+    if (!(isDogShareReceiverConnectionManager && client.isViewCamera)) {
+      parent.target?.chatModel
+          .updateConnIdOfKey(MessageKey(client.peerId, client.id));
+    }
   }
 
   void showLoginDialog(Client client) {

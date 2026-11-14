@@ -1788,6 +1788,10 @@ pub fn session_close_voice_call(session_id: SessionID) {
 
 pub fn session_get_conn_token(session_id: SessionID) -> SyncReturn<Option<String>> {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        #[cfg(windows)]
+        if crate::dogshare_role::is_controller() {
+            return SyncReturn(crate::dogshare_camera::desktop_window_token(&session, session_id));
+        }
         SyncReturn(session.get_conn_token())
     } else {
         SyncReturn(None)

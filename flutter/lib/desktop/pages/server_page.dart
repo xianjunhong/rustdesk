@@ -134,7 +134,7 @@ class ConnectionManagerState extends State<ConnectionManager>
       if (client_id != null) {
         final client =
             gFFI.serverModel.clients.firstWhereOrNull((e) => e.id == client_id);
-        if (client != null) {
+        if (client != null && !(isDogShareReceiver && client.isViewCamera)) {
           gFFI.chatModel.changeCurrentKey(MessageKey(client.peerId, client.id));
           if (client.unreadChatMessageCount.value > 0) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -564,6 +564,7 @@ class _CmHeaderState extends State<_CmHeader>
           ),
           Offstage(
             offstage: !client.authorized ||
+                (isDogShareReceiver && client.isViewCamera) ||
                 (client.type_() != ClientType.remote &&
                     client.type_() != ClientType.file &&
                     client.type_() != ClientType.camera),

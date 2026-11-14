@@ -2559,9 +2559,14 @@ connectMainDesktop(String id,
     String? connToken,
     bool? isSharedPassword,
     String loginMethod = ''}) async {
-  if (isDogShareReceiver || (isDogShareController &&
-      (isFileTransfer || isViewCamera || isTerminal || isTcpTunneling || isRDP))) {
+  if (isDogShareReceiver ||
+      (isDogShareController &&
+          (isFileTransfer || isTerminal || isTcpTunneling || isRDP))) {
     showToast(translate('Unsupported'));
+    return;
+  }
+  if (isDogShareController && isViewCamera && (connToken?.isNotEmpty != true)) {
+    showToast(translate('Connection not allowed'));
     return;
   }
   if (DogShareAccountGate.isRequired &&

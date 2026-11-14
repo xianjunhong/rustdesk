@@ -366,6 +366,7 @@ pub struct Connection {
     file_timer: crate::RustDeskInterval,
     file_transfer: Option<(String, bool)>,
     view_camera: bool,
+    dogshare_camera_login: Option<LoginRequest>,
     terminal: bool,
     port_forward_socket: Option<Framed<TcpStream, BytesCodec>>,
     port_forward_mux: Option<super::port_forward_mux::PortForwardMux>,
@@ -548,9 +549,21 @@ impl Connection {
         let _raii_control_permissions_id =
             raii::ControlPermissionsID::new(id, &control_permissions);
         let salt = Config::get_effective_permanent_password_salt();
+        let dogshare_camera_challenge = if crate::dogshare_role::is_receiver() && stream.is_secured() {
+            match crate::dogshare_camera::random_key() {
+                Ok(challenge) => Bytes::copy_from_slice(&challenge),
+                Err(error) => {
+                    log::warn!("Could not generate the paired camera challenge: {error}");
+                    Bytes::new()
+                }
+            }
+        } else {
+            Bytes::new()
+        };
         let hash = Hash {
             salt,
             challenge: Config::get_auto_password(6),
+            dogshare_camera_challenge,
             ..Default::default()
         };
         let (tx_from_cm_holder, mut rx_from_cm) = mpsc::unbounded_channel::<ipc::Data>();
@@ -589,6 +602,7 @@ impl Connection {
             file_timer: crate::rustdesk_interval(time::interval(SEC30)),
             file_transfer: None,
             view_camera: false,
+            dogshare_camera_login: None,
             terminal: false,
             port_forward_socket: None,
             port_forward_mux: None,
@@ -1200,13 +1214,17 @@ impl Connection {
                     }
                 }
                 _ = account_timer.tick(), if cfg!(windows) && conn.authorized => {
-                    if let Err(error) = crate::dogshare_account::check_connection(&conn.lr).await {
+                    if let Err(error) = crate::dogshare_account::check_connection(conn.dogshare_camera_login.as_ref().unwrap_or(&conn.lr)).await {
                         conn.send_close_reason_no_retry(&error.to_string()).await;
                         conn.on_close("DogShare account authorization ended", true).await;
                         break;
                     }
                 }
                 _ = second_timer.tick() => {
+                    if conn.dogshare_camera_login.is_some() && !conn.has_camera_permission() {
+                        conn.close_dogshare_camera("camera permission revoked").await;
+                        break;
+                    }
                     #[cfg(windows)]
                     conn.portable_check();
                     raii::AuthedConnID::check_wake_lock_on_setting_changed();
@@ -1913,7 +1931,9 @@ impl Connection {
     }
 
     async fn check_account_ticket(&mut self) -> bool {
-        let result = if self.account_ticket_consumed {
+        let result = if let Some(login) = self.dogshare_camera_login.as_ref() {
+            crate::dogshare_account::check_connection(login).await
+        } else if self.account_ticket_consumed {
             crate::dogshare_account::check_connection(&self.lr).await
         } else {
             crate::dogshare_account::consume_ticket(&self.lr).await
@@ -1928,6 +1948,66 @@ impl Connection {
                 false
             }
         }
+    }
+
+    fn attach_dogshare_camera(&mut self) -> ResultType<()> {
+        use crate::dogshare_camera;
+        if !self.stream.is_secured() || !dogshare_camera::has_proof(&self.lr) {
+            bail!(dogshare_camera::NEED_PARENT);
+        }
+        let conns = AUTHED_CONNS.lock().unwrap();
+        let login = conns
+            .iter()
+            .filter(|conn| conn.session_key.peer_id == self.lr.my_id)
+            .filter_map(|conn| conn.dogshare_camera_parent.as_ref())
+            .find_map(|parent| {
+                parent.desktop_login(
+                    &self.lr.my_id,
+                    &self.hash.dogshare_camera_challenge,
+                    &self.lr.view_camera().dogshare_parent_proof,
+                )
+            });
+        let Some(login) = login else {
+            bail!(dogshare_camera::NEED_PARENT);
+        };
+        self.dogshare_camera_login = Some(login);
+        self.keyboard = false;
+        self.clipboard = false;
+        self.audio = false;
+        self.restart = false;
+        self.block_input = false;
+        self.privacy_mode = false;
+        Ok(())
+    }
+
+    fn offer_dogshare_camera(&self, pi: &mut PeerInfo) {
+        if !(crate::dogshare_role::is_receiver() && self.is_remote() && self.stream.is_secured()) {
+            return;
+        }
+        match crate::dogshare_camera::Parent::new(self.lr.dogshare_account_ticket.clone()) {
+            Ok(parent) => {
+                self.with_authed_conn(|conn| {
+                    pi.dogshare_camera_key = Bytes::copy_from_slice(&parent.key);
+                    conn.dogshare_camera_parent = Some(parent);
+                });
+            }
+            Err(error) => log::warn!("Could not authorize paired camera viewing: {error}"),
+        }
+    }
+
+    fn with_authed_conn(&self, f: impl FnOnce(&mut AuthedConn)) {
+        let mut conns = AUTHED_CONNS.lock().unwrap();
+        if let Some(conn) = conns.iter_mut().find(|conn| conn.conn_id == self.inner.id()) {
+            f(conn);
+        }
+    }
+
+    async fn close_dogshare_camera(&mut self, reason: &str) {
+        if let Some(server) = self.server.upgrade() {
+            server.write().unwrap().remove_connection(&self.inner);
+        }
+        self.send_close_reason_no_retry("").await;
+        self.on_close(reason, false).await;
     }
 
     // Returns whether this connection should be kept alive.
@@ -1995,13 +2075,19 @@ impl Connection {
         if !self.check_trusted_device().await {
             return false;
         }
+        if self.dogshare_camera_login.is_some() && !self.has_camera_permission() {
+            self.send_login_error("No permission of viewing camera").await;
+            return false;
+        }
         self.lr.trusted_device_v2_token.clear();
         self.authorized = true;
         self.unauthorized_id = None;
         // One-time means gone once it has let a peer in, not once that peer
         // leaves. This session's later logins come in on the password the
         // session remembers, so they are not affected.
-        password::update_temporary_password();
+        if self.dogshare_camera_login.is_none() {
+            password::update_temporary_password();
+        }
         // Releases the budget `check_id_whitelist` charges against this address: only a peer
         // that got this far proved more than a self-reported id.
         self.clear_id_whitelist_failures();
@@ -2264,6 +2350,7 @@ impl Connection {
                         })
                         .into();
                     }
+                    self.offer_dogshare_camera(&mut pi);
                     res.set_peer_info(pi);
                     sub_service = true;
 
@@ -2328,6 +2415,9 @@ impl Connection {
     }
 
     fn try_sub_camera_displays(&mut self) {
+        if self.dogshare_camera_login.is_some() && !self.has_camera_permission() {
+            return;
+        }
         if let Some(s) = self.server.upgrade() {
             let mut s = s.write().unwrap();
 
@@ -2448,7 +2538,7 @@ impl Connection {
     }
 
     fn audio_enabled(&self) -> bool {
-        self.audio && !self.disable_audio
+        self.audio && !self.disable_audio && self.dogshare_camera_login.is_none()
     }
 
     #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste"))]
@@ -2804,6 +2894,12 @@ impl Connection {
         )
     }
 
+    fn has_camera_permission(&self) -> bool {
+        Self::permission(keys::OPTION_ENABLE_CAMERA, &self.control_permissions)
+            && (!crate::dogshare_role::is_receiver()
+                || Self::is_permission_enabled_locally(keys::OPTION_ENABLE_CAMERA))
+    }
+
     fn permission(
         enable_prefix_option: &str,
         control_permissions: &Option<ControlPermissions>,
@@ -2888,8 +2984,12 @@ impl Connection {
                 push(&[*show_hidden as u8]);
             }
             Some(login_request::Union::ViewCamera(vc)) => {
-                let ViewCamera { special_fields: _ } = vc;
+                let ViewCamera {
+                    dogshare_parent_proof,
+                    special_fields: _,
+                } = vc;
                 push(b"view_camera");
+                push(dogshare_parent_proof);
             }
             Some(login_request::Union::Terminal(t)) => {
                 let Terminal {
@@ -3011,9 +3111,13 @@ impl Connection {
                 return false;
             }
             #[cfg(windows)]
-            if let Err(error) = crate::dogshare_account::validate_ticket(&lr.dogshare_account_ticket) {
-                self.send_login_error(error.to_string()).await;
-                return false;
+            if !(crate::dogshare_role::is_receiver() && lr.has_view_camera()) {
+                if let Err(error) =
+                    crate::dogshare_account::validate_ticket(&lr.dogshare_account_ticket)
+                {
+                    self.send_login_error(error.to_string()).await;
+                    return false;
+                }
             }
             if !self.check_login_scope(&lr).await {
                 return false;
@@ -3045,11 +3149,16 @@ impl Connection {
                     self.file_transfer = Some((ft.dir, ft.show_hidden));
                 }
                 Some(login_request::Union::ViewCamera(_vc)) => {
-                    if !Self::permission(keys::OPTION_ENABLE_CAMERA, &self.control_permissions) {
-                        self.send_login_error("No permission of viewing camera")
-                            .await;
+                    if !self.has_camera_permission() {
+                        self.send_login_error("No permission of viewing camera").await;
                         sleep(1.).await;
                         return false;
+                    }
+                    if crate::dogshare_role::is_receiver() {
+                        if let Err(error) = self.attach_dogshare_camera() {
+                            self.send_login_error(error.to_string()).await;
+                            return false;
+                        }
                     }
                     self.view_camera = true;
                 }
@@ -5484,6 +5593,9 @@ impl Connection {
             return;
         }
         self.closed = true;
+        if crate::dogshare_role::is_receiver() && self.authorized && self.is_remote() {
+            self.with_authed_conn(|conn| conn.dogshare_camera_parent = None);
+        }
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //
@@ -5493,7 +5605,9 @@ impl Connection {
         //
         // We can add a (Vec<conn_id>, input device) to avoid this.
         // But it's not necessary now and we have to consider two audio services(client, server).
-        crate::audio_service::set_voice_call_input_device(None, true);
+        if !(crate::dogshare_role::is_receiver() && self.lr.has_view_camera()) {
+            crate::audio_service::set_voice_call_input_device(None, true);
+        }
         log::info!("#{} Connection closed: {}", self.inner.id(), reason);
         if lock
             && self.lock_after_session_end
@@ -6057,10 +6171,30 @@ impl Connection {
     }
 
     fn authorized_scope_violation(&self, msg: &Message) -> Option<&'static str> {
+        if self.dogshare_camera_login.is_some() && Self::is_camera_communication_message(msg) {
+            return Some(Self::message_family(msg));
+        }
         let Some(conn_type) = self.authed_conn_type() else {
             return (!Self::is_connection_housekeeping_message(msg)).then_some("session.auth_type");
         };
         Self::authorized_message_scope_violation(conn_type, msg)
+    }
+
+    fn is_camera_communication_message(msg: &Message) -> bool {
+        matches!(
+            msg.union.as_ref(),
+            Some(
+                message::Union::AudioFrame(_)
+                    | message::Union::VoiceCallRequest(_)
+                    | message::Union::VoiceCallResponse(_)
+            )
+        ) || matches!(
+            msg.union.as_ref(),
+            Some(message::Union::Misc(misc)) if matches!(
+                misc.union.as_ref(),
+                Some(misc::Union::AudioFormat(_) | misc::Union::ChatMessage(_))
+            )
+        )
     }
 
     async fn update_scoped_login_options(&mut self) {
@@ -7064,6 +7198,7 @@ pub struct AuthedConn {
     pub session_key: SessionKey,
     pub sender: mpsc::UnboundedSender<Data>,
     pub printer: bool,
+    dogshare_camera_parent: Option<crate::dogshare_camera::Parent>,
 }
 
 mod raii {
@@ -7122,6 +7257,7 @@ mod raii {
                 session_key,
                 sender,
                 printer,
+                dogshare_camera_parent: None,
             });
             Self::check_wake_lock();
             use std::sync::Once;
@@ -8028,6 +8164,7 @@ mod test {
             session_key,
             sender: mpsc::unbounded_channel().0,
             printer: false,
+            dogshare_camera_parent: None,
         };
         let mine = key(7, "peer");
         let remote = AuthConnType::Remote;

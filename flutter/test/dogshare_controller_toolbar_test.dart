@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
@@ -23,6 +24,23 @@ class _Binding extends Fake implements RustdeskImpl {
   String microphone = 'Default microphone';
   int voiceRequests = 0;
   int voiceStops = 0;
+
+  @override
+  Future<String> mainHandleRelayId({required String id, dynamic hint}) async =>
+      id;
+
+  @override
+  String? sessionGetCommonSync({
+    required UuidValue sessionId,
+    required String key,
+    required String param,
+    dynamic hint,
+  }) =>
+      null;
+
+  @override
+  String? sessionGetConnToken({required UuidValue sessionId, dynamic hint}) =>
+      sessionId.toString();
 
   @override
   String mainGetLocalOption({required String key, dynamic hint}) {
@@ -373,6 +391,7 @@ void main() {
     session.ffiModel.pi
       ..version = '1.4.6'
       ..isSet.value = true;
+    session.ffiModel.waitForFirstImage.value = false;
     await initializeDogShareConnectionViewMode(session.sessionId,
         isCache: false);
     session.ffiModel.setViewOnly('paired-receiver', binding.viewOnly);
@@ -455,6 +474,29 @@ void main() {
     expect(session.ffiModel.showMyCursor, isFalse);
 
     final mute = find.widgetWithText(CheckboxMenuButton, 'Mute');
+    const windowChannel = MethodChannel('mixin.one/flutter_multi_window_channel');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final oldDesktopType = desktopType;
+    MethodCall? cameraCall;
+    desktopType = DesktopType.remote;
+    messenger.setMockMethodCallHandler(windowChannel, (call) async {
+      if (call.method == kWindowConnect) cameraCall = call;
+      return null;
+    });
+    addTearDown(() {
+      desktopType = oldDesktopType;
+      messenger.setMockMethodCallHandler(windowChannel, null);
+    });
+    await tap(find.byTooltip('Chat'));
+    await tap(find.text('View camera'));
+    expect(cameraCall, isNotNull);
+    final request = cameraCall!.arguments as Map;
+    expect(request['targetWindowId'], kMainWindowId);
+    final cameraArguments = request['arguments'] as Map;
+    expect(cameraArguments, containsPair('isViewCamera', true));
+    expect(cameraArguments, containsPair('id', 'paired-receiver'));
+    expect(
+        cameraArguments, containsPair('connToken', session.sessionId.toString()));
     await tap(find.byTooltip('Chat'));
     expect(find.text('Text chat'), findsOneWidget);
     expect(tester.widget<CheckboxMenuButton>(mute).value, isTrue);

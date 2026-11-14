@@ -82,8 +82,8 @@ pub fn require_outgoing(kind: ConnType) -> ResultType<()> {
     if is_receiver() {
         bail!("DogShare B cannot start remote connections.");
     }
-    if is_controller() && kind != ConnType::DEFAULT_CONN {
-        bail!("DogShare A supports remote desktop connections only.");
+    if is_controller() && !matches!(kind, ConnType::DEFAULT_CONN | ConnType::VIEW_CAMERA) {
+        bail!("DogShare A supports remote desktop and paired camera connections only.");
     }
     Ok(())
 }
@@ -92,8 +92,8 @@ pub fn require_incoming(login: &LoginRequest) -> ResultType<()> {
     if is_controller() {
         bail!("DogShare A does not accept remote connections.");
     }
-    if is_receiver() && login.union.is_some() {
-        bail!("DogShare B accepts remote desktop connections only.");
+    if is_receiver() && login.union.is_some() && !login.has_view_camera() {
+        bail!("DogShare B accepts remote desktop and paired camera connections only.");
     }
     Ok(())
 }
@@ -112,7 +112,6 @@ pub fn blocks_permission(key: &str) -> bool {
         && matches!(
             key,
             keys::OPTION_ENABLE_FILE_TRANSFER
-                | keys::OPTION_ENABLE_CAMERA
                 | keys::OPTION_ENABLE_TERMINAL
                 | keys::OPTION_ENABLE_TUNNEL
         )
@@ -128,9 +127,12 @@ mod tests {
             require_outgoing(ConnType::DEFAULT_CONN).is_ok(),
             !is_receiver()
         );
+        assert_eq!(
+            require_outgoing(ConnType::VIEW_CAMERA).is_ok(),
+            !is_receiver()
+        );
         for kind in [
             ConnType::FILE_TRANSFER,
-            ConnType::VIEW_CAMERA,
             ConnType::TERMINAL,
             ConnType::PORT_FORWARD,
             ConnType::RDP,
@@ -138,6 +140,8 @@ mod tests {
             assert_eq!(require_outgoing(kind).is_ok(), !is_split());
         }
         let mut login = LoginRequest::new();
+        assert_eq!(require_incoming(&login).is_ok(), !is_controller());
+        login.set_view_camera(Default::default());
         assert_eq!(require_incoming(&login).is_ok(), !is_controller());
         login.set_file_transfer(Default::default());
         assert_eq!(require_incoming(&login).is_ok(), !is_split());

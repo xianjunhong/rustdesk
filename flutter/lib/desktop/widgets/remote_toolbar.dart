@@ -873,9 +873,11 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       if (widget.ffi.connType == ConnType.defaultConn) {
         toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
       }
-      toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
-      if (!isWeb) {
-        toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
+      if (!(isDogShareController && widget.ffi.connType == ConnType.viewCamera)) {
+        toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
+        if (!isWeb) {
+          toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
+        }
       }
       if (!isWeb) toolbarItems.add(_RecordMenu());
       toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
@@ -2968,8 +2970,19 @@ class _ChatMenuState extends State<_ChatMenu> {
                     ? DogShareToolbarStyle.waitingHover
                     : DogShareToolbarStyle.hover)
             : _ToolbarTheme.hoverBlueColor,
-        menuChildrenGetter: (menu) =>
-            [textChat(), ..._voiceCallItems(status, menu)],
+        menuChildrenGetter: (menu) => [
+          textChat(),
+          ..._voiceCallItems(status, menu),
+          if (widget.pairedController)
+            Obx(() => MenuButton(
+                  ffi: widget.ffi,
+                  onPressed: widget.ffi.ffiModel.pi.isSet.isTrue &&
+                          widget.ffi.ffiModel.waitForFirstImage.isFalse
+                      ? () => connectToCamera(context, widget.id, widget.ffi)
+                      : null,
+                  child: Text(translate('View camera')),
+                )),
+        ],
       );
 
   buildTextChatButton() {
